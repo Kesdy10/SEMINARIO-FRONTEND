@@ -25,11 +25,11 @@ jobs:
       - name: Revisar lint
         run: npm run lint
 
-      - name: Revisar tipos de TypeScript
-        run: npx tsc --noEmit
-
       - name: Construir la app de Next.js
         run: npm run build
+
+      - name: Revisar tipos de TypeScript
+        run: npx tsc --noEmit
 
       - name: Construir la imagen de Docker de produccion
         run: docker build -t seminario-frontend-prod .
