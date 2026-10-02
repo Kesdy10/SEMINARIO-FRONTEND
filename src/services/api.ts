@@ -19,7 +19,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
+        const isLoginRequest = error.config?.url?.includes("/auth/login");
+    if (error.response?.status === 401 && !isLoginRequest && typeof window !== "undefined") {
       removeToken();
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = "/login";
