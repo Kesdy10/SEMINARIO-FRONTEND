@@ -2,22 +2,22 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState(""); 
-  const [error, setError] = useState<string | null>(
-  searchParams.get("expired") === "true"
-    ? "Tu sesión expiró por inactividad"
-    : null);
+  const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const sessionExpired =
+  typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).get("expired") === "true";
+  
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -77,7 +77,11 @@ export default function LoginPage() {
           />
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {(error || sessionExpired) && (
+        <p className="text-sm text-red-600">
+        {error || "Tu sesión expiró por inactividad"}
+        </p>
+        )}
 
         <button
           type="submit"
