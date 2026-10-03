@@ -23,7 +23,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !isLoginRequest && typeof window !== "undefined") {
       removeToken();
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = "/login";
+      window.location.href = "/login?expired=true";
     }
     return Promise.reject(error);
   }
