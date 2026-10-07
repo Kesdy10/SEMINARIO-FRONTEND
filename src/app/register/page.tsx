@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import axios from "axios";
+import { AlertCircle, Layers, UserPlus } from "lucide-react";
 import { register } from "@/services/auth";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -52,66 +53,106 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-xl bg-white p-8 shadow"
-        noValidate
-      >
-        <h1 className="text-2xl font-semibold text-gray-900">Crear cuenta</h1>
+    <main className="relative flex min-h-screen items-center justify-center bg-background p-4">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+        }}
+      />
 
-        <div>
-          <label htmlFor="name" className="mb-1 block text-sm text-gray-700">Nombre</label>
-          <input
-            id="name"
-            type="text"
-            autoComplete="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-          />
+      <div className="relative w-full max-w-sm space-y-5">
+        <div className="space-y-3 text-center">
+          <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded border border-primary/30 bg-primary/10">
+            <Layers className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">RAG Platform</h1>
+            <p className="mt-1 font-mono text-[12px] text-muted-foreground">
+              Consulta inteligente de proyectos de software
+            </p>
+          </div>
         </div>
 
-        <div>
-          <label htmlFor="email" className="mb-1 block text-sm text-gray-700">Correo</label>
-          <input
-            id="email"
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-          />
+        <div className="space-y-5 rounded border border-border bg-card p-6">
+          <div className="flex items-center gap-2">
+            <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+              Crear cuenta
+            </span>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <div className="space-y-1.5">
+              <label htmlFor="name" className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                Nombre
+              </label>
+              <input
+                id="name"
+                type="text"
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded border border-border bg-secondary px-3 py-2.5 text-[13px] text-foreground placeholder-muted-foreground transition-colors focus:border-primary/60 focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                Correo institucional
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="usuario@correo.com"
+                className="w-full rounded border border-border bg-secondary px-3 py-2.5 text-[13px] text-foreground placeholder-muted-foreground transition-colors focus:border-primary/60 focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="password" className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                Contraseña
+              </label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded border border-border bg-secondary px-3 py-2.5 text-[13px] text-foreground placeholder-muted-foreground transition-colors focus:border-primary/60 focus:outline-none"
+              />
+              <p className="font-mono text-[10px] text-muted-foreground">Mínimo 8 caracteres.</p>
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+                <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex w-full items-center justify-center gap-2 rounded bg-primary py-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSubmitting ? "Creando cuenta..." : "Crear cuenta"}
+            </button>
+          </form>
         </div>
 
-        <div>
-          <label htmlFor="password" className="mb-1 block text-sm text-gray-700">Contraseña</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-gray-900"
-          />
-          <p className="mt-1 text-xs text-gray-500">Mínimo 8 caracteres.</p>
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full rounded-md bg-blue-600 py-2 font-medium text-white disabled:opacity-60"
-        >
-          {isSubmitting ? "Creando cuenta..." : "Crear cuenta"}
-        </button>
-
-        <p className="text-center text-sm text-gray-600">
+        <p className="text-center text-[13px] text-muted-foreground">
           ¿Ya tienes cuenta?{" "}
-          <Link href="/login" className="text-blue-600 hover:underline">Inicia sesión</Link>
+          <Link href="/login" className="text-primary hover:underline">
+            Inicia sesión
+          </Link>
         </p>
-      </form>
+      </div>
     </main>
   );
 }
