@@ -44,6 +44,14 @@ export default function ChatPage() {
     );
   }
 
+  // Reinicia el chat: borra los mensajes en pantalla y el conversation_id,
+  // para que la siguiente pregunta empiece una conversacion nueva en el backend.
+  function handleNewConversation() {
+    setMessages([]);
+    setConversationId(null);
+    setError(null);
+  }
+
   async function handleSend(question: string) {
     setError(null);
 
@@ -132,6 +140,15 @@ export default function ChatPage() {
             Modo prueba (mocks)
           </span>
         )}
+
+        <button
+          type="button"
+          onClick={handleNewConversation}
+          disabled={messages.length === 0}
+          className="ml-auto rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+        >
+          Nueva conversación
+        </button>
       </header>
 
       <MessageList messages={messages} isLoading={isLoading} />

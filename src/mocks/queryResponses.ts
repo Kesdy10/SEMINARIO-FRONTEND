@@ -8,7 +8,7 @@ export const mockRespuestaCodigo: QueryResponse = {
   project_id: "mock-project",
   question: "¿Dónde se implementa el login?",
   answer:
-    "El login se implementa en `auth_service.py`, en la función `login_user`.\n\n" +
+    "\n\n" +
     "```python\ndef login_user(email: str, password: str):\n" +
     "    user = users.find_one({\"email\": email})\n" +
     "    if not user or not verify_password(password, user[\"password_hash\"]):\n" +
