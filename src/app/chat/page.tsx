@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Clock, GitBranch, MessageSquare, Plus } from "lucide-react";
+import { Check, Copy, GitBranch, MessageSquare, Plus, Search } from "lucide-react";
+import Sidebar from "@/components/Sidebar";
 import MessageList from "@/components/chat/MessageList";
 import ChatInput from "@/components/chat/ChatInput";
 import { query } from "@/services/chat";
@@ -11,16 +12,18 @@ import { mockRespuestas } from "@/mocks/queryResponses";
 import type { Conversation, QueryResponse } from "@/types/api";
 import type { ChatMessage } from "@/types/chat";
 
-// Proyecto de prueba indexado por el equipo RAG (se configura en .env.local)
 const PROJECTS = [
   { id: process.env.NEXT_PUBLIC_DEFAULT_PROJECT_ID ?? "", name: "Proyecto de prueba (RAG)" },
 ];
-
-// Lista fija por ahora; después vendrá del backend
 const BRANCHES = ["main", "develop"];
-
-// Con NEXT_PUBLIC_USE_MOCKS=true el chat responde con datos de prueba, sin llamar al backend
 const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
+
+const SUGGESTIONS = [
+  "¿Dónde se implementa el inicio de sesión?",
+  "¿Qué tablas contiene el proyecto?",
+  "¿Qué diferencias hay entre main y develop?",
+  "¿Qué función registra un nuevo usuario?",
+];
 
 function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -32,6 +35,27 @@ async function askMock(question: string): Promise<QueryResponse> {
   return { ...mock, question };
 }
 
+// Agrupa conversaciones por Hoy / Ayer / Esta semana / Anteriores, como en el diseño
+function groupByDate(convs: Conversation[]) {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const yday = new Date(now);
+  yday.setDate(yday.getDate() - 1);
+  const wk = new Date(now);
+  wk.setDate(wk.getDate() - 7);
+
+  const groups: Record<string, Conversation[]> = { Hoy: [], Ayer: [], "Esta semana": [], Anteriores: [] };
+  convs.forEach((c) => {
+    const d = new Date(c.updated_at);
+    d.setHours(0, 0, 0, 0);
+    if (d >= now) groups["Hoy"].push(c);
+    else if (d >= yday) groups["Ayer"].push(c);
+    else if (d >= wk) groups["Esta semana"].push(c);
+    else groups["Anteriores"].push(c);
+  });
+  return Object.entries(groups).filter(([, v]) => v.length);
+}
+
 export default function ChatPage() {
   const [projectId, setProjectId] = useState(PROJECTS[0].id);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
@@ -39,12 +63,12 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  // Historial de conversaciones guardadas (GET /conversations)
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -66,15 +90,12 @@ export default function ChatPage() {
     );
   }
 
-  // Reinicia el chat: borra los mensajes en pantalla y el conversation_id,
-  // para que la siguiente pregunta empiece una conversacion nueva en el backend.
   function handleNewConversation() {
     setMessages([]);
     setConversationId(null);
     setError(null);
   }
 
-  // Carga los mensajes de una conversación guardada y continúa desde ahí
   async function openConversation(conv: Conversation) {
     setLoadingConvId(conv.conversation_id);
     setError(null);
@@ -129,7 +150,6 @@ export default function ChatPage() {
         },
       ]);
 
-      // La conversación recién usada sube al tope del historial una vez recargado
       if (!USE_MOCKS) {
         getConversations()
           .then(setConversations)
@@ -148,88 +168,106 @@ export default function ChatPage() {
     }
   }
 
+  function copyConvId() {
+    if (!conversationId) return;
+    navigator.clipboard.writeText(conversationId).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  const filteredConvs = useMemo(
+    () => (conversations ?? []).filter((c) => c.conversation_id.toLowerCase().includes(search.toLowerCase())),
+    [conversations, search]
+  );
+  const groups = useMemo(() => groupByDate(filteredConvs), [filteredConvs]);
+  const activeProject = PROJECTS.find((p) => p.id === projectId);
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Sidebar de historial */}
-      <aside
-        className={`flex-shrink-0 overflow-hidden border-r border-border bg-card transition-all duration-200 ${
-          sidebarOpen ? "w-60" : "w-0 border-0"
-        }`}
-      >
-        <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
+      <Sidebar />
+
+      {/* Panel de conversaciones */}
+      <aside className="flex w-56 flex-shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar">
+        <div className="flex items-center justify-between border-b border-sidebar-border px-3 py-2.5">
           <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
             Conversaciones
           </span>
-          <span className="font-mono text-[10px] text-muted-foreground">
-            {conversations?.length ?? "…"}
-          </span>
+          <span className="font-mono text-[10px] text-muted-foreground">{conversations?.length ?? "…"}</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2">
-          {historyError && (
-            <p className="px-1 py-2 font-mono text-[11px] text-muted-foreground">{historyError}</p>
-          )}
+        <div className="space-y-1.5 px-2 py-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar…"
+              className="w-full rounded border border-border bg-secondary py-1.5 pl-7 pr-2 text-[11px] text-foreground placeholder-muted-foreground transition-colors focus:border-primary/50 focus:outline-none"
+            />
+          </div>
+          <button
+            onClick={handleNewConversation}
+            className="flex w-full items-center gap-2 rounded border border-primary/20 bg-primary/10 px-2.5 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20"
+          >
+            <Plus className="h-3 w-3" /> Nueva conversación
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-3 overflow-y-auto px-2 pb-3">
+          {historyError && <p className="px-1 py-2 font-mono text-[11px] text-muted-foreground">{historyError}</p>}
           {!historyError && conversations === null && (
             <p className="px-1 py-2 font-mono text-[11px] text-muted-foreground">Cargando…</p>
           )}
-          {conversations && conversations.length === 0 && (
-            <p className="px-1 py-2 font-mono text-[11px] text-muted-foreground">
-              Todavía no hay conversaciones guardadas.
-            </p>
+          {groups.length === 0 && conversations !== null && !historyError && (
+            <p className="px-1 py-2 font-mono text-[11px] text-muted-foreground">Sin conversaciones.</p>
           )}
-          {conversations?.map((conv) => (
-            <button
-              key={conv.conversation_id}
-              onClick={() => openConversation(conv)}
-              disabled={loadingConvId === conv.conversation_id}
-              className={`w-full rounded px-2.5 py-2 text-left transition-colors hover:bg-secondary ${
-                conv.conversation_id === conversationId ? "bg-secondary" : ""
-              }`}
-            >
-              <div className="truncate font-mono text-[11px] text-foreground">
-                {conv.conversation_id}
+          {groups.map(([label, items]) => (
+            <div key={label}>
+              <div className="mb-1 px-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                {label}
               </div>
-              <div className="font-mono text-[10px] text-muted-foreground">
-                {new Date(conv.updated_at).toLocaleString("es-GT")}
+              <div className="space-y-0.5">
+                {items.map((conv) => {
+                  const active = conv.conversation_id === conversationId;
+                  return (
+                    <button
+                      key={conv.conversation_id}
+                      onClick={() => openConversation(conv)}
+                      disabled={loadingConvId === conv.conversation_id}
+                      className={`w-full rounded px-2.5 py-2 text-left transition-colors ${
+                        active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50"
+                      }`}
+                    >
+                      <div className="truncate font-mono text-[11px] text-foreground">{conv.conversation_id}</div>
+                      <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+                        <GitBranch className="h-2.5 w-2.5" />
+                        {new Date(conv.updated_at).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </aside>
 
       {/* Chat principal */}
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((v) => !v)}
-            className="text-muted-foreground transition-colors hover:text-foreground"
-            title="Historial"
-          >
-            <Clock className="h-4 w-4" />
-          </button>
-
+        <header className="flex flex-wrap items-center gap-2.5 border-b border-border px-4 py-2.5">
           <div className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4 text-primary" />
-            <h1 className="text-[13px] font-medium text-foreground">Consultas</h1>
+            <span className="text-[13px] font-medium text-foreground">Consulta RAG</span>
           </div>
 
-          <div className="h-4 w-px bg-border" />
-
-          <label className="flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
-            Proyecto
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className="rounded border border-border bg-secondary px-2 py-1 text-[12px] text-foreground focus:border-primary/60 focus:outline-none"
-            >
-              {PROJECTS.map((project) => (
-                <option key={project.name} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {activeProject && (
+            <>
+              <div className="h-4 w-px bg-border" />
+              <span className="hidden font-mono text-[12px] text-muted-foreground lg:block">
+                {activeProject.name}
+              </span>
+            </>
+          )}
 
           <fieldset className="flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
             <legend className="sr-only">Ramas a consultar</legend>
@@ -251,31 +289,55 @@ export default function ChatPage() {
                 </button>
               );
             })}
-            <span className="text-[10px]">(ninguna = todas)</span>
           </fieldset>
 
-          {USE_MOCKS && (
-            <span className="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-400">
-              Modo prueba (mocks)
-            </span>
+          {conversationId && (
+            <div className="flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1">
+              <span className="font-mono text-[10px] text-muted-foreground">conv:</span>
+              <span className="font-mono text-[11px] text-primary">{conversationId}</span>
+              <button onClick={copyConvId} className="text-muted-foreground transition-colors hover:text-foreground">
+                {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              </button>
+            </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleNewConversation}
-            disabled={messages.length === 0}
-            className="ml-auto flex items-center gap-1.5 rounded border border-border bg-secondary px-3 py-1.5 font-mono text-[11px] text-foreground transition-colors hover:border-primary/40 disabled:opacity-40"
-          >
-            <Plus className="h-3 w-3" /> Nueva conversación
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            {USE_MOCKS && (
+              <span className="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-400">
+                Modo prueba (mocks)
+              </span>
+            )}
+            {!USE_MOCKS && projectId && (
+              <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">
+                indexado
+              </span>
+            )}
+          </div>
         </header>
+
+        {messages.length === 0 && !isLoading && (
+          <div className="border-b border-border px-6 pt-4">
+            <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+              Consultas sugeridas
+            </p>
+            <div className="flex flex-wrap gap-2 pb-4">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleSend(s)}
+                  className="rounded border border-border bg-secondary px-3 py-1.5 text-left text-[12px] text-foreground transition-colors hover:border-primary/40"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <MessageList messages={messages} isLoading={isLoading} />
 
         {error && (
-          <p className="border-t border-red-500/20 bg-red-500/5 px-4 py-2 text-[12px] text-red-400">
-            {error}
-          </p>
+          <p className="border-t border-red-500/20 bg-red-500/5 px-4 py-2 text-[12px] text-red-400">{error}</p>
         )}
 
         <ChatInput onSend={handleSend} disabled={isLoading} />
