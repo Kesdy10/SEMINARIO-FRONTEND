@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { Send } from "lucide-react";
 
 interface ChatInputProps {
   onSend: (question: string) => void;
@@ -31,7 +32,7 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-end gap-2 border-t border-gray-200 bg-white p-4">
+    <form onSubmit={handleSubmit} className="flex items-end gap-2 border-t border-border bg-card p-4">
       <label htmlFor="chat-question" className="sr-only">
         Escribe tu pregunta
       </label>
@@ -43,13 +44,14 @@ export default function ChatInput({ onSend, disabled = false }: ChatInputProps) 
         disabled={disabled}
         rows={2}
         placeholder="Escribe tu pregunta… (Enter para enviar, Shift+Enter para nueva línea)"
-        className="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 disabled:bg-gray-100"
+        className="flex-1 resize-none rounded border border-border bg-secondary px-3 py-2 text-[13px] text-foreground placeholder-muted-foreground transition-colors focus:border-primary/60 focus:outline-none disabled:opacity-60"
       />
       <button
         type="submit"
         disabled={disabled || !value.trim()}
-        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="flex items-center gap-2 rounded bg-primary px-4 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
       >
+        <Send className="h-3.5 w-3.5" />
         {disabled ? "Enviando…" : "Enviar"}
       </button>
     </form>

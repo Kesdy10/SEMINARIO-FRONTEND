@@ -19,18 +19,23 @@ export default function MessageList({ messages, isLoading = false }: MessageList
 
   if (messages.length === 0 && !isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-gray-500">
+      <div className="flex flex-1 items-center justify-center p-8 text-center font-mono text-[13px] text-muted-foreground">
         Haz una pregunta sobre el proyecto para empezar.
       </div>
     );
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+    <div className="flex flex-1 flex-col gap-4 overflow-y-auto bg-background p-4">
       {messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}
-      {isLoading && <p className="text-sm text-gray-500">El asistente está escribiendo…</p>}
+      {isLoading && (
+        <div className="flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
+          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+          El asistente está escribiendo…
+        </div>
+      )}
       <div ref={endRef} />
     </div>
   );

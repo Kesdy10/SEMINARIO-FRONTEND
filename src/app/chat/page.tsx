@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import axios from "axios";
+import { GitBranch, MessageSquare, Plus } from "lucide-react";
 import MessageList from "@/components/chat/MessageList";
 import ChatInput from "@/components/chat/ChatInput";
 import { query } from "@/services/chat";
@@ -100,16 +101,21 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="flex h-screen flex-col bg-gray-50">
-      <header className="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-4 py-3">
-        <h1 className="text-lg font-semibold text-gray-900">Consultas</h1>
+    <main className="flex h-screen flex-col bg-background">
+      <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="h-4 w-4 text-primary" />
+          <h1 className="text-[13px] font-medium text-foreground">Consultas</h1>
+        </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-700">
+        <div className="h-4 w-px bg-border" />
+
+        <label className="flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
           Proyecto
           <select
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
-            className="rounded-md border border-gray-300 px-2 py-1 text-gray-900"
+            className="rounded border border-border bg-secondary px-2 py-1 text-[12px] text-foreground focus:border-primary/60 focus:outline-none"
           >
             {PROJECTS.map((project) => (
               <option key={project.name} value={project.id}>
@@ -119,24 +125,31 @@ export default function ChatPage() {
           </select>
         </label>
 
-        <fieldset className="flex items-center gap-3 text-sm text-gray-700">
+        <fieldset className="flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
           <legend className="sr-only">Ramas a consultar</legend>
-          <span>Ramas:</span>
-          {BRANCHES.map((branch) => (
-            <label key={branch} className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={selectedBranches.includes(branch)}
-                onChange={() => toggleBranch(branch)}
-              />
-              {branch}
-            </label>
-          ))}
-          <span className="text-xs text-gray-500">(ninguna = todas)</span>
+          <GitBranch className="h-3 w-3" />
+          {BRANCHES.map((branch) => {
+            const active = selectedBranches.includes(branch);
+            return (
+              <button
+                key={branch}
+                type="button"
+                onClick={() => toggleBranch(branch)}
+                className={`rounded border px-2 py-0.5 text-[11px] transition-colors ${
+                  active
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {branch}
+              </button>
+            );
+          })}
+          <span className="text-[10px]">(ninguna = todas)</span>
         </fieldset>
 
         {USE_MOCKS && (
-          <span className="rounded bg-yellow-100 px-2 py-0.5 text-xs text-yellow-800">
+          <span className="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-400">
             Modo prueba (mocks)
           </span>
         )}
@@ -145,15 +158,19 @@ export default function ChatPage() {
           type="button"
           onClick={handleNewConversation}
           disabled={messages.length === 0}
-          className="ml-auto rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+          className="ml-auto flex items-center gap-1.5 rounded border border-border bg-secondary px-3 py-1.5 font-mono text-[11px] text-foreground transition-colors hover:border-primary/40 disabled:opacity-40"
         >
-          Nueva conversación
+          <Plus className="h-3 w-3" /> Nueva conversación
         </button>
       </header>
 
       <MessageList messages={messages} isLoading={isLoading} />
 
-      {error && <p className="px-4 pb-2 text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="border-t border-red-500/20 bg-red-500/5 px-4 py-2 text-[12px] text-red-400">
+          {error}
+        </p>
+      )}
 
       <ChatInput onSend={handleSend} disabled={isLoading} />
     </main>
