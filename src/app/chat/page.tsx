@@ -8,12 +8,14 @@ import MessageList from "@/components/chat/MessageList";
 import ChatInput from "@/components/chat/ChatInput";
 import { query } from "@/services/chat";
 import { getConversations, getConversationMessages } from "@/services/conversations";
+import { listProjects } from "@/services/projects";
 import { mockRespuestas } from "@/mocks/queryResponses";
-import type { Conversation, QueryResponse } from "@/types/api";
+import type { Conversation, Project, QueryResponse } from "@/types/api";
 import type { ChatMessage } from "@/types/chat";
 
-const PROJECTS = [
-  { id: process.env.NEXT_PUBLIC_DEFAULT_PROJECT_ID ?? "", name: "Proyecto de prueba (RAG)" },
+// Con mocks activos no hace falta backend real: se simula un único proyecto.
+const MOCK_PROJECTS: Project[] = [
+  { project_id: "mock-project", name: "Proyecto de prueba (mocks)", created_by: "mock", created_at: new Date().toISOString() },
 ];
 const BRANCHES = ["main", "develop"];
 const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
@@ -57,7 +59,11 @@ function groupByDate(convs: Conversation[]) {
 }
 
 export default function ChatPage() {
-  const [projectId, setProjectId] = useState(PROJECTS[0].id);
+  const [projectId, setProjectId] = useState("");
+  // Con mocks, el catálogo es fijo y no depende del backend: se usa como estado
+  // inicial directamente, sin pasar por un efecto.
+  const [projects, setProjects] = useState<Project[] | null>(() => (USE_MOCKS ? MOCK_PROJECTS : null));
+  const [projectsError, setProjectsError] = useState<string | null>(null);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -83,6 +89,27 @@ export default function ChatPage() {
       active = false;
     };
   }, []);
+
+  // Catálogo real de proyectos (GET /api/v1/projects). Con mocks activos el
+  // estado ya arrancó con MOCK_PROJECTS (arriba), así que este efecto no hace nada.
+  useEffect(() => {
+    if (USE_MOCKS) return;
+    let active = true;
+    listProjects()
+      .then((data) => {
+        if (active) setProjects(data);
+      })
+      .catch(() => {
+        if (active) setProjectsError("No se pudo cargar el catálogo de proyectos.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Si no se ha elegido proyecto a mano, se usa el primero del catálogo —
+  // derivado en cada render, sin un efecto que tenga que sincronizarlo.
+  const effectiveProjectId = projectId || projects?.[0]?.project_id || "";
 
   function toggleBranch(branch: string) {
     setSelectedBranches((current) =>
@@ -118,8 +145,8 @@ export default function ChatPage() {
   async function handleSend(question: string) {
     setError(null);
 
-    if (!USE_MOCKS && !projectId) {
-      setError("Falta configurar el proyecto (NEXT_PUBLIC_DEFAULT_PROJECT_ID en .env.local).");
+    if (!USE_MOCKS && !effectiveProjectId) {
+      setError("Selecciona un proyecto para preguntar. Si el catálogo está vacío, pídele a un admin que cree uno en /admin/proyectos.");
       return;
     }
 
@@ -130,7 +157,7 @@ export default function ChatPage() {
       const response = USE_MOCKS
         ? await askMock(question)
         : await query({
-            project_id: projectId,
+            project_id: effectiveProjectId,
             question,
             branches: selectedBranches,
             conversation_id: conversationId,
@@ -180,7 +207,6 @@ export default function ChatPage() {
     [conversations, search]
   );
   const groups = useMemo(() => groupByDate(filteredConvs), [filteredConvs]);
-  const activeProject = PROJECTS.find((p) => p.id === projectId);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -260,14 +286,26 @@ export default function ChatPage() {
             <span className="text-[13px] font-medium text-foreground">Consulta RAG</span>
           </div>
 
-          {activeProject && (
+          {projects && projects.length > 0 && (
             <>
               <div className="h-4 w-px bg-border" />
-              <span className="hidden font-mono text-[12px] text-muted-foreground lg:block">
-                {activeProject.name}
-              </span>
+              <select
+                value={effectiveProjectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="rounded border border-border bg-secondary px-2 py-1 font-mono text-[12px] text-foreground focus:border-primary/60 focus:outline-none"
+              >
+                {projects.map((p) => (
+                  <option key={p.project_id} value={p.project_id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
             </>
           )}
+          {projects !== null && projects.length === 0 && !projectsError && (
+            <span className="font-mono text-[11px] text-amber-400">Sin proyectos indexados todavía.</span>
+          )}
+          {projectsError && <span className="font-mono text-[11px] text-red-400">{projectsError}</span>}
 
           <fieldset className="flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
             <legend className="sr-only">Ramas a consultar</legend>
@@ -307,7 +345,7 @@ export default function ChatPage() {
                 Modo prueba (mocks)
               </span>
             )}
-            {!USE_MOCKS && projectId && (
+            {!USE_MOCKS && effectiveProjectId && (
               <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">
                 indexado
               </span>

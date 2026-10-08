@@ -5,6 +5,8 @@ export interface User {
   name: string;
   email: string;
   role: string;
+  active?: boolean;
+  created_at?: string | null;
 }
 
 export interface LoginRequest {
@@ -73,4 +75,79 @@ export interface Conversation {
   project_id: string;
   created_at: string;
   updated_at: string;
+}
+
+// --- Administración: proyectos, indexación y usuarios (solo admin) ---
+
+export interface Project {
+  project_id: string;
+  name: string;
+  description?: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface ProjectCreateRequest {
+  project_id?: string;
+  name: string;
+  description?: string;
+}
+
+export interface ProjectUpdateRequest {
+  name?: string;
+  description?: string;
+}
+
+export interface ProjectIndexDeleteResult {
+  project_id: string;
+  deleted_chunks: number;
+}
+
+export interface Ingestion {
+  type: "document" | "repository" | "commit";
+  source: string;
+  branches?: string[] | null;
+  commits?: string[] | null;
+  files_processed?: number | null;
+  chunks_created?: number | null;
+  created_by: string;
+  created_at: string;
+}
+
+// El backend reenvía la respuesta del servicio RAG tal cual (sin response_model
+// propio en /repositories/branches ni /repositories/ingest), así que se lee de
+// forma defensiva: se intentan los nombres esperados y se ignora lo demás.
+export interface RepositoryBranchesResult {
+  repository?: string;
+  branches?: (string | { name: string })[];
+  [key: string]: unknown;
+}
+
+export interface RepositoryIngestResult {
+  total_files?: number;
+  total_chunks?: number;
+  [key: string]: unknown;
+}
+
+export interface RepositoryCommit {
+  sha: string;
+  message: string;
+  authored_at: string;
+}
+
+export interface RepositoryCommitsResult {
+  repository?: string;
+  branch?: string | null;
+  commits?: RepositoryCommit[];
+  [key: string]: unknown;
+}
+
+export interface DocumentIngestResult {
+  total_chunks?: number;
+  [key: string]: unknown;
+}
+
+export interface AdminUserUpdateRequest {
+  role?: "user" | "admin";
+  active?: boolean;
 }

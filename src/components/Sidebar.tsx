@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Clock, Layers, LogOut, MessageSquare, User as UserIcon } from "lucide-react";
+import { Clock, Layers, LogOut, MessageSquare, Shield, User as UserIcon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 const NAV_LINKS = [
@@ -11,11 +11,19 @@ const NAV_LINKS = [
   { href: "/profile", label: "Mi perfil", icon: UserIcon },
 ];
 
+// Solo visibles para role "admin" (el backend igual rechaza estos endpoints
+// a cualquiera que no lo sea, esto es solo para no mostrar enlaces muertos)
+const ADMIN_NAV_LINKS = [
+  { href: "/admin/proyectos", label: "Proyectos (admin)", icon: Shield },
+  { href: "/admin/usuarios", label: "Usuarios (admin)", icon: UserIcon },
+];
+
 // Navegacion lateral persistente de toda la app autenticada
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const navLinks = user?.role === "admin" ? [...NAV_LINKS, ...ADMIN_NAV_LINKS] : NAV_LINKS;
 
   const handleLogout = async () => {
     await logout();
@@ -41,7 +49,7 @@ export default function Sidebar() {
       </Link>
 
       <nav className="flex-1 space-y-0.5 p-2">
-        {NAV_LINKS.map(({ href, label, icon: Icon }) => {
+        {navLinks.map(({ href, label, icon: Icon }) => {
           const active = pathname?.startsWith(href);
           return (
             <Link
@@ -67,7 +75,14 @@ export default function Sidebar() {
               {initials}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] text-foreground">{user.name}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-[12px] text-foreground">{user.name}</span>
+                {user.role === "admin" && (
+                  <span className="flex-shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px font-mono text-[9px] uppercase tracking-wider text-amber-400">
+                    Admin
+                  </span>
+                )}
+              </div>
               <div className="truncate font-mono text-[10px] text-muted-foreground">{user.role}</div>
             </div>
             <button

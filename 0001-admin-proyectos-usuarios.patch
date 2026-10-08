@@ -1,0 +1,1442 @@
+From 718c157c5449d9b10abeb4e415e9b07e4184daf3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 6 Oct 2026 23:54:11 -0600
+Subject: [PATCH] =?UTF-8?q?feat(admin):=20interfaz=20de=20administraci?=
+ =?UTF-8?q?=C3=B3n=20de=20proyectos=20y=20usuarios?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Guiado por la funcionalidad ya expuesta en si-backend (catálogo de
+proyectos, ingestión de documentos/repos/commits, gestión de usuarios -
+todo solo-admin vía require_admin), pero con nuestro propio diseño
+(mismo Sidebar/MainLayout, paleta y tipografía del resto de la app).
+
+- /admin/proyectos: crear proyecto, subir documentos, indexar repo
+  (explorar ramas -> indexar) o commits puntuales, ver historial de
+  ingestas, vaciar índice, eliminar proyecto.
+- /admin/usuarios: cambiar rol, activar/desactivar, resetear contraseña.
+- AdminGuard + app/admin/layout.tsx: solo role "admin" pasa, el resto
+  se redirige a /chat.
+- Sidebar: enlaces de admin solo visibles para ese rol, badge ADMIN.
+- /chat: el selector de proyecto ahora usa GET /api/v1/projects real
+  en vez de un único project_id hardcodeado por env var (resuelve
+  CHAT-10 sin depender de pedir el project_id al equipo de RAG aparte).
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Snd4avgEuWeiLg8ZEAH6Pb
+---
+ src/app/admin/layout.tsx         |   6 +
+ src/app/admin/proyectos/page.tsx | 646 +++++++++++++++++++++++++++++++
+ src/app/admin/usuarios/page.tsx  | 224 +++++++++++
+ src/app/chat/page.tsx            |  64 ++-
+ src/components/AdminGuard.tsx    |  41 ++
+ src/components/Sidebar.tsx       |  21 +-
+ src/services/adminUsers.ts       |  19 +
+ src/services/documents.ts        |  16 +
+ src/services/projects.ts         |  45 +++
+ src/services/repositories.ts     |  62 +++
+ src/types/api.ts                 |  77 ++++
+ 11 files changed, 1205 insertions(+), 16 deletions(-)
+ create mode 100644 src/app/admin/layout.tsx
+ create mode 100644 src/app/admin/proyectos/page.tsx
+ create mode 100644 src/app/admin/usuarios/page.tsx
+ create mode 100644 src/components/AdminGuard.tsx
+ create mode 100644 src/services/adminUsers.ts
+ create mode 100644 src/services/documents.ts
+ create mode 100644 src/services/projects.ts
+ create mode 100644 src/services/repositories.ts
+
+diff --git a/src/app/admin/layout.tsx b/src/app/admin/layout.tsx
+new file mode 100644
+index 0000000..36ef00a
+--- /dev/null
++++ b/src/app/admin/layout.tsx
+@@ -0,0 +1,6 @@
++import type { ReactNode } from "react";
++import AdminGuard from "@/components/AdminGuard";
++
++export default function AdminLayout({ children }: { children: ReactNode }) {
++  return <AdminGuard>{children}</AdminGuard>;
++}
+diff --git a/src/app/admin/proyectos/page.tsx b/src/app/admin/proyectos/page.tsx
+new file mode 100644
+index 0000000..ecddd99
+--- /dev/null
++++ b/src/app/admin/proyectos/page.tsx
+@@ -0,0 +1,646 @@
++"use client";
++
++import { useEffect, useMemo, useState, type FormEvent } from "react";
++import axios from "axios";
++import {
++  Eraser,
++  GitBranch,
++  GitCommit,
++  Plus,
++  RefreshCw,
++  Shield,
++  Trash2,
++  Upload,
++} from "lucide-react";
++import Sidebar from "@/components/Sidebar";
++import { listBranches, listCommits, ingestCommits, ingestRepository } from "@/services/repositories";
++import { ingestDocuments } from "@/services/documents";
++import {
++  createProject,
++  deleteProject,
++  deleteProjectIndex,
++  getProjectIngestions,
++  listProjects,
++} from "@/services/projects";
++import type { Ingestion, Project, RepositoryCommit } from "@/types/api";
++
++function errorMessage(err: unknown, fallback: string): string {
++  if (axios.isAxiosError(err)) {
++    if (!err.response) return "No se pudo conectar con el servidor.";
++    const detail = err.response.data?.detail;
++    if (typeof detail === "string") return detail;
++  }
++  return fallback;
++}
++
++// Panel de administración de proyectos: crear/elegir un proyecto, indexar
++// documentos/repos/commits en él, y ver qué se le ha indexado. Funcionalmente
++// se basa en lo que ya existe del lado del backend (si-backend: catálogo de
++// proyectos, ingestión de documentos/repositorios/commits, solo-admin), pero
++// con nuestro propio diseño — no el del backend, que no tiene interfaz propia.
++export default function AdminProyectosPage() {
++  const [projects, setProjects] = useState<Project[] | null>(null);
++  const [projectsError, setProjectsError] = useState<string | null>(null);
++  const [selectedId, setSelectedId] = useState("");
++
++  const [showCreate, setShowCreate] = useState(false);
++  const [newName, setNewName] = useState("");
++  const [newId, setNewId] = useState("");
++  const [newDescription, setNewDescription] = useState("");
++  const [creating, setCreating] = useState(false);
++  const [createError, setCreateError] = useState<string | null>(null);
++
++  const [clearingIndex, setClearingIndex] = useState(false);
++  const [clearIndexMessage, setClearIndexMessage] = useState<string | null>(null);
++  const [clearIndexError, setClearIndexError] = useState<string | null>(null);
++  const [deletingProject, setDeletingProject] = useState(false);
++  const [deleteError, setDeleteError] = useState<string | null>(null);
++
++  // Cambia cada vez que algo se indexa, para forzar a <ProjectIngestions> a
++  // recargar (se le pasa como parte de su `key`, junto al project_id).
++  const [reloadToken, setReloadToken] = useState(0);
++
++  function loadProjects() {
++    setProjectsError(null);
++    listProjects()
++      .then(setProjects)
++      .catch((err) => setProjectsError(errorMessage(err, "No se pudo cargar el catálogo de proyectos.")));
++  }
++
++  useEffect(() => {
++    let active = true;
++    listProjects()
++      .then((data) => {
++        if (active) setProjects(data);
++      })
++      .catch((err) => {
++        if (active) setProjectsError(errorMessage(err, "No se pudo cargar el catálogo de proyectos."));
++      });
++    return () => {
++      active = false;
++    };
++  }, []);
++
++  const selectedProject = useMemo(
++    () => (projects ?? []).find((p) => p.project_id === selectedId) ?? null,
++    [projects, selectedId]
++  );
++
++  async function handleCreateProject(event: FormEvent) {
++    event.preventDefault();
++    setCreateError(null);
++    if (!newName.trim()) {
++      setCreateError("El nombre es obligatorio.");
++      return;
++    }
++    setCreating(true);
++    try {
++      const project = await createProject({
++        name: newName.trim(),
++        project_id: newId.trim() || undefined,
++        description: newDescription.trim() || undefined,
++      });
++      setProjects((current) => [project, ...(current ?? [])]);
++      setSelectedId(project.project_id);
++      setShowCreate(false);
++      setNewName("");
++      setNewId("");
++      setNewDescription("");
++    } catch (err) {
++      setCreateError(errorMessage(err, "No se pudo crear el proyecto."));
++    } finally {
++      setCreating(false);
++    }
++  }
++
++  async function handleClearIndex() {
++    if (!selectedId) return;
++    if (
++      !window.confirm(
++        `¿Vaciar el índice de "${selectedId}"? Se borran los fragmentos indexados; el proyecto se mantiene en el catálogo.`
++      )
++    ) {
++      return;
++    }
++    setClearingIndex(true);
++    setClearIndexError(null);
++    setClearIndexMessage(null);
++    try {
++      const result = await deleteProjectIndex(selectedId);
++      setClearIndexMessage(`Índice vaciado (${result.deleted_chunks} fragmentos eliminados).`);
++    } catch (err) {
++      setClearIndexError(errorMessage(err, "No se pudo vaciar el índice."));
++    } finally {
++      setClearingIndex(false);
++    }
++  }
++
++  async function handleDeleteProject() {
++    if (!selectedId) return;
++    if (!window.confirm(`¿Eliminar el proyecto "${selectedId}" del catálogo? Esta acción no se puede deshacer.`)) {
++      return;
++    }
++    setDeletingProject(true);
++    setDeleteError(null);
++    try {
++      await deleteProject(selectedId);
++      setProjects((current) => (current ?? []).filter((p) => p.project_id !== selectedId));
++      setSelectedId("");
++    } catch (err) {
++      setDeleteError(errorMessage(err, "No se pudo eliminar el proyecto."));
++    } finally {
++      setDeletingProject(false);
++    }
++  }
++
++  return (
++    <div className="flex h-screen overflow-hidden bg-background">
++      <Sidebar />
++
++      {/* Panel de gestión: catálogo, creación e indexación */}
++      <aside className="flex w-72 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar px-3 py-3">
++        <div className="mb-3 flex items-center gap-2">
++          <Shield className="h-4 w-4 text-primary" />
++          <span className="text-[13px] font-medium text-foreground">Administración de proyectos</span>
++        </div>
++
++        <div className="space-y-1.5">
++          <label className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Proyecto</label>
++          <div className="flex items-center gap-1.5">
++            <select
++              value={selectedId}
++              onChange={(e) => setSelectedId(e.target.value)}
++              className="w-full rounded border border-border bg-secondary px-2.5 py-2 text-[12px] text-foreground focus:border-primary/60 focus:outline-none"
++            >
++              <option value="">Selecciona un proyecto</option>
++              {(projects ?? []).map((p) => (
++                <option key={p.project_id} value={p.project_id}>
++                  {p.name}
++                </option>
++              ))}
++            </select>
++            <button
++              type="button"
++              onClick={loadProjects}
++              title="Recargar catálogo"
++              className="flex-shrink-0 rounded border border-border p-2 text-muted-foreground transition-colors hover:text-foreground"
++            >
++              <RefreshCw className="h-3.5 w-3.5" />
++            </button>
++          </div>
++          {projectsError && <p className="font-mono text-[11px] text-red-400">{projectsError}</p>}
++          {projects === null && !projectsError && (
++            <p className="font-mono text-[11px] text-muted-foreground">Cargando…</p>
++          )}
++        </div>
++
++        <button
++          type="button"
++          onClick={() => setShowCreate((v) => !v)}
++          className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-primary transition-colors hover:text-primary/80"
++        >
++          <Plus className="h-3 w-3" /> Crear proyecto
++        </button>
++
++        {showCreate && (
++          <form onSubmit={handleCreateProject} className="mt-2 space-y-2 rounded border border-border bg-card p-3">
++            <div className="space-y-1">
++              <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Nombre</label>
++              <input
++                value={newName}
++                onChange={(e) => setNewName(e.target.value)}
++                className="w-full rounded border border-border bg-secondary px-2 py-1.5 text-[12px] text-foreground focus:border-primary/60 focus:outline-none"
++              />
++            </div>
++            <div className="space-y-1">
++              <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
++                project_id (opcional)
++              </label>
++              <input
++                value={newId}
++                onChange={(e) => setNewId(e.target.value)}
++                placeholder="se genera del nombre"
++                className="w-full rounded border border-border bg-secondary px-2 py-1.5 text-[12px] text-foreground placeholder-muted-foreground focus:border-primary/60 focus:outline-none"
++              />
++            </div>
++            <div className="space-y-1">
++              <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
++                Descripción (opcional)
++              </label>
++              <textarea
++                value={newDescription}
++                onChange={(e) => setNewDescription(e.target.value)}
++                rows={2}
++                className="w-full resize-none rounded border border-border bg-secondary px-2 py-1.5 text-[12px] text-foreground focus:border-primary/60 focus:outline-none"
++              />
++            </div>
++            {createError && <p className="font-mono text-[11px] text-red-400">{createError}</p>}
++            <button
++              type="submit"
++              disabled={creating}
++              className="w-full rounded bg-primary py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
++            >
++              {creating ? "Creando…" : "Crear"}
++            </button>
++          </form>
++        )}
++
++        <div className="my-3 border-t border-sidebar-border" />
++
++        {selectedId ? (
++          <IndexingPanel
++            key={selectedId}
++            projectId={selectedId}
++            onIndexed={() => setReloadToken((t) => t + 1)}
++          />
++        ) : (
++          <p className="font-mono text-[11px] text-muted-foreground">
++            Selecciona o crea un proyecto para indexar documentos, repositorios o commits en él.
++          </p>
++        )}
++      </aside>
++
++      {/* Detalle del proyecto seleccionado */}
++      <main className="flex-1 overflow-y-auto p-6">
++        {!selectedProject && (
++          <div className="flex h-full items-center justify-center">
++            <p className="font-mono text-[13px] text-muted-foreground">
++              Selecciona o crea un proyecto para administrar su indexación.
++            </p>
++          </div>
++        )}
++
++        {selectedProject && (
++          <div className="max-w-3xl space-y-5">
++            <div className="flex items-start justify-between gap-4 rounded border border-border bg-card p-5">
++              <div className="min-w-0 space-y-1">
++                <h2 className="truncate text-lg font-semibold text-foreground">{selectedProject.name}</h2>
++                <p className="font-mono text-[11px] text-primary">{selectedProject.project_id}</p>
++                {selectedProject.description && (
++                  <p className="text-[13px] text-muted-foreground">{selectedProject.description}</p>
++                )}
++                <p className="font-mono text-[10px] text-muted-foreground">
++                  Creado por {selectedProject.created_by} ·{" "}
++                  {new Date(selectedProject.created_at).toLocaleString("es-GT")}
++                </p>
++              </div>
++              <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
++                <button
++                  type="button"
++                  onClick={handleClearIndex}
++                  disabled={clearingIndex}
++                  className="flex items-center gap-1.5 whitespace-nowrap rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 font-mono text-[11px] text-amber-400 transition-colors hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
++                >
++                  <Eraser className="h-3 w-3" /> {clearingIndex ? "Vaciando…" : "Vaciar índice"}
++                </button>
++                <button
++                  type="button"
++                  onClick={handleDeleteProject}
++                  disabled={deletingProject}
++                  className="flex items-center gap-1.5 whitespace-nowrap rounded border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 font-mono text-[11px] text-red-400 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
++                >
++                  <Trash2 className="h-3 w-3" /> {deletingProject ? "Eliminando…" : "Eliminar proyecto"}
++                </button>
++                {clearIndexMessage && (
++                  <p className="font-mono text-[10px] text-emerald-400">{clearIndexMessage}</p>
++                )}
++                {clearIndexError && <p className="font-mono text-[10px] text-red-400">{clearIndexError}</p>}
++                {deleteError && <p className="font-mono text-[10px] text-red-400">{deleteError}</p>}
++              </div>
++            </div>
++
++            <ProjectIngestions key={`${selectedId}:${reloadToken}`} projectId={selectedId} />
++          </div>
++        )}
++      </main>
++    </div>
++  );
++}
++
++// Formularios para indexar documentos, un repositorio (explorando sus ramas
++// primero) o commits puntuales, todos sobre `projectId`. Vive como componente
++// aparte y se monta con key={projectId} desde el padre: así todo su estado
++// (archivos elegidos, ramas/commits encontrados, mensajes) se reinicia solo al
++// cambiar de proyecto, sin necesitar un efecto que resetee manualmente.
++function IndexingPanel({ projectId, onIndexed }: { projectId: string; onIndexed: () => void }) {
++  const [files, setFiles] = useState<File[]>([]);
++  const [uploadingDocs, setUploadingDocs] = useState(false);
++  const [docsMessage, setDocsMessage] = useState<string | null>(null);
++  const [docsError, setDocsError] = useState<string | null>(null);
++
++  const [repoUrl, setRepoUrl] = useState("");
++  const [branches, setBranches] = useState<string[] | null>(null);
++  const [branchesLoading, setBranchesLoading] = useState(false);
++  const [branchesError, setBranchesError] = useState<string | null>(null);
++  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
++  const [ingestingRepo, setIngestingRepo] = useState(false);
++  const [repoMessage, setRepoMessage] = useState<string | null>(null);
++  const [repoError, setRepoError] = useState<string | null>(null);
++
++  const [commitsBranch, setCommitsBranch] = useState("");
++  const [commits, setCommits] = useState<RepositoryCommit[] | null>(null);
++  const [commitsLoading, setCommitsLoading] = useState(false);
++  const [commitsError, setCommitsError] = useState<string | null>(null);
++  const [selectedCommits, setSelectedCommits] = useState<string[]>([]);
++  const [ingestingCommits, setIngestingCommits] = useState(false);
++  const [commitsMessage, setCommitsMessage] = useState<string | null>(null);
++
++  async function handleUploadDocuments() {
++    if (files.length === 0) return;
++    setUploadingDocs(true);
++    setDocsError(null);
++    setDocsMessage(null);
++    try {
++      const result = await ingestDocuments(projectId, files);
++      setDocsMessage(`Indexado: ${result.total_chunks ?? "listo"} fragmentos.`);
++      setFiles([]);
++      onIndexed();
++    } catch (err) {
++      setDocsError(errorMessage(err, "No se pudieron indexar los documentos."));
++    } finally {
++      setUploadingDocs(false);
++    }
++  }
++
++  async function handleSearchBranches() {
++    if (!repoUrl.trim()) return;
++    setBranchesLoading(true);
++    setBranchesError(null);
++    setBranches(null);
++    setSelectedBranches([]);
++    try {
++      setBranches(await listBranches(repoUrl.trim()));
++    } catch (err) {
++      setBranchesError(errorMessage(err, "No se pudieron obtener las ramas."));
++    } finally {
++      setBranchesLoading(false);
++    }
++  }
++
++  function toggleBranch(branch: string) {
++    setSelectedBranches((current) =>
++      current.includes(branch) ? current.filter((b) => b !== branch) : [...current, branch]
++    );
++  }
++
++  async function handleIngestRepo() {
++    if (!repoUrl.trim() || selectedBranches.length === 0) return;
++    setIngestingRepo(true);
++    setRepoError(null);
++    setRepoMessage(null);
++    try {
++      const result = await ingestRepository(projectId, repoUrl.trim(), selectedBranches);
++      setRepoMessage(`Indexado: ${result.total_files ?? "?"} archivos, ${result.total_chunks ?? "?"} fragmentos.`);
++      onIndexed();
++    } catch (err) {
++      setRepoError(errorMessage(err, "No se pudo indexar el repositorio."));
++    } finally {
++      setIngestingRepo(false);
++    }
++  }
++
++  async function handleSearchCommits() {
++    if (!repoUrl.trim()) return;
++    setCommitsLoading(true);
++    setCommitsError(null);
++    setCommits(null);
++    setSelectedCommits([]);
++    try {
++      setCommits(await listCommits(repoUrl.trim(), commitsBranch));
++    } catch (err) {
++      setCommitsError(errorMessage(err, "No se pudieron obtener los commits."));
++    } finally {
++      setCommitsLoading(false);
++    }
++  }
++
++  function toggleCommit(sha: string) {
++    setSelectedCommits((current) => {
++      if (current.includes(sha)) return current.filter((c) => c !== sha);
++      if (current.length >= 10) return current; // el backend acepta máx. 10 por ingesta
++      return [...current, sha];
++    });
++  }
++
++  async function handleIngestCommits() {
++    if (!repoUrl.trim() || selectedCommits.length === 0) return;
++    setIngestingCommits(true);
++    setCommitsError(null);
++    setCommitsMessage(null);
++    try {
++      const result = await ingestCommits(projectId, repoUrl.trim(), selectedCommits);
++      setCommitsMessage(`Indexado: ${result.total_files ?? "?"} archivos, ${result.total_chunks ?? "?"} fragmentos.`);
++      onIndexed();
++    } catch (err) {
++      setCommitsError(errorMessage(err, "No se pudieron indexar los commits."));
++    } finally {
++      setIngestingCommits(false);
++    }
++  }
++
++  return (
++    <>
++      <div className="space-y-1.5">
++        <label className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
++          Subir documentos
++        </label>
++        <input
++          type="file"
++          multiple
++          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
++          className="block w-full text-[11px] text-muted-foreground file:mr-2 file:rounded file:border file:border-border file:bg-secondary file:px-2 file:py-1 file:text-[11px] file:text-foreground"
++        />
++        <button
++          type="button"
++          onClick={handleUploadDocuments}
++          disabled={files.length === 0 || uploadingDocs}
++          className="flex w-full items-center justify-center gap-1.5 rounded border border-primary/20 bg-primary/10 px-2.5 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
++        >
++          <Upload className="h-3 w-3" /> {uploadingDocs ? "Indexando…" : "Indexar documentos"}
++        </button>
++        {docsMessage && <p className="font-mono text-[11px] text-emerald-400">{docsMessage}</p>}
++        {docsError && <p className="font-mono text-[11px] text-red-400">{docsError}</p>}
++      </div>
++
++      <div className="my-3 border-t border-sidebar-border" />
++
++      <div className="space-y-1.5">
++        <label className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
++          Cargar repositorio (GitHub)
++        </label>
++        <input
++          value={repoUrl}
++          onChange={(e) => setRepoUrl(e.target.value)}
++          placeholder="https://github.com/usuario/repo"
++          className="w-full rounded border border-border bg-secondary px-2.5 py-2 text-[12px] text-foreground placeholder-muted-foreground focus:border-primary/60 focus:outline-none"
++        />
++        <button
++          type="button"
++          onClick={handleSearchBranches}
++          disabled={!repoUrl.trim() || branchesLoading}
++          className="flex w-full items-center justify-center gap-1.5 rounded border border-border bg-secondary px-2.5 py-1.5 font-mono text-[11px] text-foreground transition-colors hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-40"
++        >
++          <GitBranch className="h-3 w-3" /> {branchesLoading ? "Buscando…" : "Buscar ramas"}
++        </button>
++        {branchesError && <p className="font-mono text-[11px] text-red-400">{branchesError}</p>}
++        {branches && branches.length === 0 && (
++          <p className="font-mono text-[11px] text-muted-foreground">Sin ramas encontradas.</p>
++        )}
++        {branches && branches.length > 0 && (
++          <div className="space-y-1.5">
++            <div className="flex flex-wrap gap-1.5">
++              {branches.map((b) => {
++                const active = selectedBranches.includes(b);
++                return (
++                  <button
++                    key={b}
++                    type="button"
++                    onClick={() => toggleBranch(b)}
++                    className={`rounded border px-2 py-0.5 font-mono text-[11px] transition-colors ${
++                      active
++                        ? "border-primary/40 bg-primary/10 text-primary"
++                        : "border-border text-muted-foreground hover:text-foreground"
++                    }`}
++                  >
++                    {b}
++                  </button>
++                );
++              })}
++            </div>
++            <button
++              type="button"
++              onClick={handleIngestRepo}
++              disabled={selectedBranches.length === 0 || ingestingRepo}
++              className="flex w-full items-center justify-center gap-1.5 rounded bg-primary px-2.5 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
++            >
++              {ingestingRepo ? "Indexando…" : "Indexar repositorio"}
++            </button>
++          </div>
++        )}
++        {repoMessage && <p className="font-mono text-[11px] text-emerald-400">{repoMessage}</p>}
++        {repoError && <p className="font-mono text-[11px] text-red-400">{repoError}</p>}
++      </div>
++
++      <div className="my-3 border-t border-sidebar-border" />
++
++      <div className="space-y-1.5">
++        <label className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
++          Indexar commits puntuales
++        </label>
++        <input
++          value={commitsBranch}
++          onChange={(e) => setCommitsBranch(e.target.value)}
++          placeholder="rama (opcional, vacío = HEAD)"
++          className="w-full rounded border border-border bg-secondary px-2.5 py-2 text-[12px] text-foreground placeholder-muted-foreground focus:border-primary/60 focus:outline-none"
++        />
++        <button
++          type="button"
++          onClick={handleSearchCommits}
++          disabled={!repoUrl.trim() || commitsLoading}
++          className="flex w-full items-center justify-center gap-1.5 rounded border border-border bg-secondary px-2.5 py-1.5 font-mono text-[11px] text-foreground transition-colors hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-40"
++        >
++          <GitCommit className="h-3 w-3" /> {commitsLoading ? "Buscando…" : "Buscar commits"}
++        </button>
++        {!repoUrl.trim() && (
++          <p className="font-mono text-[10px] text-muted-foreground">Usa la URL del repositorio de arriba.</p>
++        )}
++        {commitsError && <p className="font-mono text-[11px] text-red-400">{commitsError}</p>}
++        {commits && commits.length === 0 && (
++          <p className="font-mono text-[11px] text-muted-foreground">Sin commits encontrados.</p>
++        )}
++        {commits && commits.length > 0 && (
++          <div className="space-y-1.5">
++            <div className="max-h-40 space-y-1 overflow-y-auto rounded border border-border p-1.5">
++              {commits.map((c) => {
++                const active = selectedCommits.includes(c.sha);
++                return (
++                  <label
++                    key={c.sha}
++                    className={`flex cursor-pointer items-start gap-1.5 rounded px-1.5 py-1 text-[11px] transition-colors ${
++                      active ? "bg-primary/10" : "hover:bg-sidebar-accent/50"
++                    }`}
++                  >
++                    <input
++                      type="checkbox"
++                      checked={active}
++                      onChange={() => toggleCommit(c.sha)}
++                      className="mt-0.5 flex-shrink-0"
++                    />
++                    <span className="min-w-0">
++                      <span className="block truncate font-mono text-primary">{c.sha.slice(0, 7)}</span>
++                      <span className="block truncate text-muted-foreground">{c.message}</span>
++                    </span>
++                  </label>
++                );
++              })}
++            </div>
++            <p className="font-mono text-[10px] text-muted-foreground">{selectedCommits.length}/10 seleccionados</p>
++            <button
++              type="button"
++              onClick={handleIngestCommits}
++              disabled={selectedCommits.length === 0 || ingestingCommits}
++              className="flex w-full items-center justify-center gap-1.5 rounded bg-primary px-2.5 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
++            >
++              {ingestingCommits ? "Indexando…" : "Indexar commits"}
++            </button>
++          </div>
++        )}
++        {commitsMessage && <p className="font-mono text-[11px] text-emerald-400">{commitsMessage}</p>}
++      </div>
++    </>
++  );
++}
++
++// Historial de lo indexado en un proyecto. Se monta con
++// key={`${projectId}:${reloadToken}`} desde el padre: cambiar de proyecto o
++// terminar una ingesta nueva remonta el componente y dispara una carga fresca,
++// sin un efecto que tenga que resetear el estado a mano.
++function ProjectIngestions({ projectId }: { projectId: string }) {
++  const [ingestions, setIngestions] = useState<Ingestion[] | null>(null);
++  const [error, setError] = useState<string | null>(null);
++
++  useEffect(() => {
++    let active = true;
++    getProjectIngestions(projectId)
++      .then((data) => {
++        if (active) setIngestions(data);
++      })
++      .catch((err) => {
++        if (active) setError(errorMessage(err, "No se pudo cargar el historial de indexación."));
++      });
++    return () => {
++      active = false;
++    };
++  }, [projectId]);
++
++  return (
++    <div>
++      <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
++        Historial de indexación
++      </p>
++      {error && <p className="font-mono text-[12px] text-red-400">{error}</p>}
++      {!error && ingestions === null && <p className="font-mono text-[12px] text-muted-foreground">Cargando…</p>}
++      {ingestions && ingestions.length === 0 && (
++        <p className="font-mono text-[12px] text-muted-foreground">Nada indexado todavía.</p>
++      )}
++      {ingestions && ingestions.length > 0 && (
++        <div className="overflow-hidden rounded border border-border bg-card">
++          {ingestions.map((ing, i) => (
++            <div
++              key={i}
++              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border px-4 py-2.5 font-mono text-[12px] text-muted-foreground last:border-0"
++            >
++              <span className="rounded border border-border px-1.5 py-0.5 text-[10px] uppercase text-foreground">
++                {ing.type}
++              </span>
++              <span className="min-w-0 flex-1 truncate text-foreground">{ing.source}</span>
++              <span>{ing.files_processed ?? "—"} archivos</span>
++              <span>{ing.chunks_created ?? "—"} fragmentos</span>
++              <span>{new Date(ing.created_at).toLocaleDateString("es-GT")}</span>
++            </div>
++          ))}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/app/admin/usuarios/page.tsx b/src/app/admin/usuarios/page.tsx
+new file mode 100644
+index 0000000..2e28df4
+--- /dev/null
++++ b/src/app/admin/usuarios/page.tsx
+@@ -0,0 +1,224 @@
++"use client";
++
++import { useEffect, useState } from "react";
++import axios from "axios";
++import { KeyRound, RefreshCw, ShieldCheck, Users as UsersIcon } from "lucide-react";
++import Sidebar from "@/components/Sidebar";
++import { listUsers, resetUserPassword, updateUser } from "@/services/adminUsers";
++import { useAuth } from "@/hooks/useAuth";
++import type { User } from "@/types/api";
++
++function errorMessage(err: unknown, fallback: string): string {
++  if (axios.isAxiosError(err)) {
++    if (!err.response) return "No se pudo conectar con el servidor.";
++    const detail = err.response.data?.detail;
++    if (typeof detail === "string") return detail;
++  }
++  return fallback;
++}
++
++// Gestión de usuarios: rol, activar/desactivar y reseteo de contraseña. Solo admin
++// (el backend además bloquea que un admin se desactive o se quite el rol a sí mismo).
++export default function AdminUsuariosPage() {
++  const { user: currentUser } = useAuth();
++  const [users, setUsers] = useState<User[] | null>(null);
++  const [listError, setListError] = useState<string | null>(null);
++  const [rowError, setRowError] = useState<Record<string, string>>({});
++  const [busyId, setBusyId] = useState<string | null>(null);
++  const [resetTargetId, setResetTargetId] = useState<string | null>(null);
++  const [newPassword, setNewPassword] = useState("");
++
++  function loadUsers() {
++    setListError(null);
++    listUsers()
++      .then(setUsers)
++      .catch((err) => setListError(errorMessage(err, "No se pudo cargar la lista de usuarios.")));
++  }
++
++  useEffect(() => {
++    let active = true;
++    listUsers()
++      .then((data) => {
++        if (active) setUsers(data);
++      })
++      .catch((err) => {
++        if (active) setListError(errorMessage(err, "No se pudo cargar la lista de usuarios."));
++      });
++    return () => {
++      active = false;
++    };
++  }, []);
++
++  function setError(userId: string, message: string | null) {
++    setRowError((current) => {
++      const next = { ...current };
++      if (message) next[userId] = message;
++      else delete next[userId];
++      return next;
++    });
++  }
++
++  async function handleToggleActive(target: User) {
++    setBusyId(target.id);
++    setError(target.id, null);
++    try {
++      const updated = await updateUser(target.id, { active: !target.active });
++      setUsers((current) => (current ?? []).map((u) => (u.id === updated.id ? updated : u)));
++    } catch (err) {
++      setError(target.id, errorMessage(err, "No se pudo cambiar el estado."));
++    } finally {
++      setBusyId(null);
++    }
++  }
++
++  async function handleToggleRole(target: User) {
++    const nextRole = target.role === "admin" ? "user" : "admin";
++    setBusyId(target.id);
++    setError(target.id, null);
++    try {
++      const updated = await updateUser(target.id, { role: nextRole });
++      setUsers((current) => (current ?? []).map((u) => (u.id === updated.id ? updated : u)));
++    } catch (err) {
++      setError(target.id, errorMessage(err, "No se pudo cambiar el rol."));
++    } finally {
++      setBusyId(null);
++    }
++  }
++
++  async function handleResetPassword(userId: string) {
++    if (newPassword.length < 8) {
++      setError(userId, "La contraseña nueva debe tener al menos 8 caracteres.");
++      return;
++    }
++    setBusyId(userId);
++    setError(userId, null);
++    try {
++      await resetUserPassword(userId, newPassword);
++      setResetTargetId(null);
++      setNewPassword("");
++    } catch (err) {
++      setError(userId, errorMessage(err, "No se pudo resetear la contraseña."));
++    } finally {
++      setBusyId(null);
++    }
++  }
++
++  return (
++    <div className="flex h-screen overflow-hidden bg-background">
++      <Sidebar />
++      <main className="flex-1 overflow-y-auto p-6">
++        <div className="max-w-3xl space-y-4">
++          <div className="flex items-center justify-between gap-2">
++            <div className="flex items-center gap-2">
++              <UsersIcon className="h-4 w-4 text-primary" />
++              <h2 className="text-lg font-semibold text-foreground">Usuarios</h2>
++            </div>
++            <button
++              type="button"
++              onClick={loadUsers}
++              title="Recargar"
++              className="flex-shrink-0 rounded border border-border p-2 text-muted-foreground transition-colors hover:text-foreground"
++            >
++              <RefreshCw className="h-3.5 w-3.5" />
++            </button>
++          </div>
++
++          {listError && <p className="font-mono text-[13px] text-red-400">{listError}</p>}
++          {!listError && users === null && <p className="font-mono text-[13px] text-muted-foreground">Cargando…</p>}
++
++          {users && (
++            <div className="overflow-hidden rounded border border-border bg-card">
++              {users.map((u) => {
++                const isSelf = u.id === currentUser?.id;
++                const busy = busyId === u.id;
++                return (
++                  <div key={u.id} className="border-b border-border px-4 py-3 last:border-0">
++                    <div className="flex flex-wrap items-center justify-between gap-3">
++                      <div className="min-w-0">
++                        <div className="flex items-center gap-1.5">
++                          <span className="truncate text-[13px] text-foreground">{u.name}</span>
++                          {u.role === "admin" && (
++                            <span className="flex-shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px font-mono text-[9px] uppercase tracking-wider text-amber-400">
++                              Admin
++                            </span>
++                          )}
++                          {u.active === false && (
++                            <span className="flex-shrink-0 rounded border border-red-500/30 bg-red-500/10 px-1 py-px font-mono text-[9px] uppercase tracking-wider text-red-400">
++                              Inactivo
++                            </span>
++                          )}
++                        </div>
++                        <p className="truncate font-mono text-[11px] text-muted-foreground">{u.email}</p>
++                      </div>
++
++                      <div className="flex flex-shrink-0 items-center gap-1.5">
++                        <button
++                          type="button"
++                          onClick={() => handleToggleRole(u)}
++                          disabled={busy || isSelf}
++                          title={isSelf ? "No puedes quitarte el rol de administrador a ti mismo" : undefined}
++                          className="flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-40"
++                        >
++                          <ShieldCheck className="h-3 w-3" />
++                          {u.role === "admin" ? "Quitar admin" : "Hacer admin"}
++                        </button>
++                        <button
++                          type="button"
++                          onClick={() => handleToggleActive(u)}
++                          disabled={busy || isSelf}
++                          title={isSelf ? "No puedes desactivar tu propia cuenta" : undefined}
++                          className={`rounded border px-2 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
++                            u.active === false
++                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
++                              : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
++                          }`}
++                        >
++                          {u.active === false ? "Activar" : "Desactivar"}
++                        </button>
++                        <button
++                          type="button"
++                          onClick={() => {
++                            setResetTargetId(resetTargetId === u.id ? null : u.id);
++                            setNewPassword("");
++                            setError(u.id, null);
++                          }}
++                          className="flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground transition-colors hover:border-primary/40"
++                        >
++                          <KeyRound className="h-3 w-3" /> Reset
++                        </button>
++                      </div>
++                    </div>
++
++                    {resetTargetId === u.id && (
++                      <div className="mt-2 flex items-center gap-1.5">
++                        <input
++                          type="password"
++                          value={newPassword}
++                          onChange={(e) => setNewPassword(e.target.value)}
++                          placeholder="Contraseña nueva (mín. 8 caracteres)"
++                          className="w-full max-w-xs rounded border border-border bg-secondary px-2.5 py-1.5 text-[12px] text-foreground placeholder-muted-foreground focus:border-primary/60 focus:outline-none"
++                        />
++                        <button
++                          type="button"
++                          onClick={() => handleResetPassword(u.id)}
++                          disabled={busy}
++                          className="rounded bg-primary px-3 py-1.5 font-mono text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
++                        >
++                          Confirmar
++                        </button>
++                      </div>
++                    )}
++
++                    {rowError[u.id] && (
++                      <p className="mt-1.5 font-mono text-[11px] text-red-400">{rowError[u.id]}</p>
++                    )}
++                  </div>
++                );
++              })}
++            </div>
++          )}
++        </div>
++      </main>
++    </div>
++  );
++}
+diff --git a/src/app/chat/page.tsx b/src/app/chat/page.tsx
+index ac51226..d3601f6 100644
+--- a/src/app/chat/page.tsx
++++ b/src/app/chat/page.tsx
+@@ -8,12 +8,14 @@ import MessageList from "@/components/chat/MessageList";
+ import ChatInput from "@/components/chat/ChatInput";
+ import { query } from "@/services/chat";
+ import { getConversations, getConversationMessages } from "@/services/conversations";
++import { listProjects } from "@/services/projects";
+ import { mockRespuestas } from "@/mocks/queryResponses";
+-import type { Conversation, QueryResponse } from "@/types/api";
++import type { Conversation, Project, QueryResponse } from "@/types/api";
+ import type { ChatMessage } from "@/types/chat";
+ 
+-const PROJECTS = [
+-  { id: process.env.NEXT_PUBLIC_DEFAULT_PROJECT_ID ?? "", name: "Proyecto de prueba (RAG)" },
++// Con mocks activos no hace falta backend real: se simula un único proyecto.
++const MOCK_PROJECTS: Project[] = [
++  { project_id: "mock-project", name: "Proyecto de prueba (mocks)", created_by: "mock", created_at: new Date().toISOString() },
+ ];
+ const BRANCHES = ["main", "develop"];
+ const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
+@@ -57,7 +59,11 @@ function groupByDate(convs: Conversation[]) {
+ }
+ 
+ export default function ChatPage() {
+-  const [projectId, setProjectId] = useState(PROJECTS[0].id);
++  const [projectId, setProjectId] = useState("");
++  // Con mocks, el catálogo es fijo y no depende del backend: se usa como estado
++  // inicial directamente, sin pasar por un efecto.
++  const [projects, setProjects] = useState<Project[] | null>(() => (USE_MOCKS ? MOCK_PROJECTS : null));
++  const [projectsError, setProjectsError] = useState<string | null>(null);
+   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+   const [messages, setMessages] = useState<ChatMessage[]>([]);
+   const [conversationId, setConversationId] = useState<string | null>(null);
+@@ -84,6 +90,27 @@ export default function ChatPage() {
+     };
+   }, []);
+ 
++  // Catálogo real de proyectos (GET /api/v1/projects). Con mocks activos el
++  // estado ya arrancó con MOCK_PROJECTS (arriba), así que este efecto no hace nada.
++  useEffect(() => {
++    if (USE_MOCKS) return;
++    let active = true;
++    listProjects()
++      .then((data) => {
++        if (active) setProjects(data);
++      })
++      .catch(() => {
++        if (active) setProjectsError("No se pudo cargar el catálogo de proyectos.");
++      });
++    return () => {
++      active = false;
++    };
++  }, []);
++
++  // Si no se ha elegido proyecto a mano, se usa el primero del catálogo —
++  // derivado en cada render, sin un efecto que tenga que sincronizarlo.
++  const effectiveProjectId = projectId || projects?.[0]?.project_id || "";
++
+   function toggleBranch(branch: string) {
+     setSelectedBranches((current) =>
+       current.includes(branch) ? current.filter((b) => b !== branch) : [...current, branch]
+@@ -118,8 +145,8 @@ export default function ChatPage() {
+   async function handleSend(question: string) {
+     setError(null);
+ 
+-    if (!USE_MOCKS && !projectId) {
+-      setError("Falta configurar el proyecto (NEXT_PUBLIC_DEFAULT_PROJECT_ID en .env.local).");
++    if (!USE_MOCKS && !effectiveProjectId) {
++      setError("Selecciona un proyecto para preguntar. Si el catálogo está vacío, pídele a un admin que cree uno en /admin/proyectos.");
+       return;
+     }
+ 
+@@ -130,7 +157,7 @@ export default function ChatPage() {
+       const response = USE_MOCKS
+         ? await askMock(question)
+         : await query({
+-            project_id: projectId,
++            project_id: effectiveProjectId,
+             question,
+             branches: selectedBranches,
+             conversation_id: conversationId,
+@@ -180,7 +207,6 @@ export default function ChatPage() {
+     [conversations, search]
+   );
+   const groups = useMemo(() => groupByDate(filteredConvs), [filteredConvs]);
+-  const activeProject = PROJECTS.find((p) => p.id === projectId);
+ 
+   return (
+     <div className="flex h-screen overflow-hidden bg-background">
+@@ -260,14 +286,26 @@ export default function ChatPage() {
+             <span className="text-[13px] font-medium text-foreground">Consulta RAG</span>
+           </div>
+ 
+-          {activeProject && (
++          {projects && projects.length > 0 && (
+             <>
+               <div className="h-4 w-px bg-border" />
+-              <span className="hidden font-mono text-[12px] text-muted-foreground lg:block">
+-                {activeProject.name}
+-              </span>
++              <select
++                value={effectiveProjectId}
++                onChange={(e) => setProjectId(e.target.value)}
++                className="rounded border border-border bg-secondary px-2 py-1 font-mono text-[12px] text-foreground focus:border-primary/60 focus:outline-none"
++              >
++                {projects.map((p) => (
++                  <option key={p.project_id} value={p.project_id}>
++                    {p.name}
++                  </option>
++                ))}
++              </select>
+             </>
+           )}
++          {projects !== null && projects.length === 0 && !projectsError && (
++            <span className="font-mono text-[11px] text-amber-400">Sin proyectos indexados todavía.</span>
++          )}
++          {projectsError && <span className="font-mono text-[11px] text-red-400">{projectsError}</span>}
+ 
+           <fieldset className="flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
+             <legend className="sr-only">Ramas a consultar</legend>
+@@ -307,7 +345,7 @@ export default function ChatPage() {
+                 Modo prueba (mocks)
+               </span>
+             )}
+-            {!USE_MOCKS && projectId && (
++            {!USE_MOCKS && effectiveProjectId && (
+               <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">
+                 indexado
+               </span>
+diff --git a/src/components/AdminGuard.tsx b/src/components/AdminGuard.tsx
+new file mode 100644
+index 0000000..dbf7e28
+--- /dev/null
++++ b/src/components/AdminGuard.tsx
+@@ -0,0 +1,41 @@
++"use client";
++
++import { useEffect, type ReactNode } from "react";
++import { useRouter } from "next/navigation";
++import { ShieldAlert } from "lucide-react";
++import { useAuth } from "@/hooks/useAuth";
++
++// Protege todo lo que cuelga de /admin: solo usuarios con role "admin" pasan.
++// Mientras useAuth carga la sesión, o si no hay sesión/rol válido, no se
++// renderiza el contenido (evita un parpadeo con datos de administración).
++export default function AdminGuard({ children }: { children: ReactNode }) {
++  const { user, isLoading } = useAuth();
++  const router = useRouter();
++
++  useEffect(() => {
++    if (!isLoading && (!user || user.role !== "admin")) {
++      router.replace("/chat");
++    }
++  }, [isLoading, user, router]);
++
++  if (isLoading) {
++    return (
++      <div className="flex min-h-screen items-center justify-center bg-background">
++        <p className="font-mono text-[13px] text-muted-foreground">Cargando…</p>
++      </div>
++    );
++  }
++
++  if (!user || user.role !== "admin") {
++    return (
++      <div className="flex min-h-screen items-center justify-center bg-background">
++        <div className="flex items-center gap-3 rounded border border-red-500/30 bg-red-500/10 px-4 py-3">
++          <ShieldAlert className="h-4 w-4 flex-shrink-0 text-red-400" />
++          <p className="font-mono text-[12px] text-foreground">Esta sección es solo para administradores.</p>
++        </div>
++      </div>
++    );
++  }
++
++  return <>{children}</>;
++}
+diff --git a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+index 207c8c2..b629e3c 100644
+--- a/src/components/Sidebar.tsx
++++ b/src/components/Sidebar.tsx
+@@ -2,7 +2,7 @@
+ 
+ import Link from "next/link";
+ import { usePathname, useRouter } from "next/navigation";
+-import { Clock, Layers, LogOut, MessageSquare, User as UserIcon } from "lucide-react";
++import { Clock, Layers, LogOut, MessageSquare, Shield, User as UserIcon } from "lucide-react";
+ import { useAuth } from "@/hooks/useAuth";
+ 
+ const NAV_LINKS = [
+@@ -11,11 +11,19 @@ const NAV_LINKS = [
+   { href: "/profile", label: "Mi perfil", icon: UserIcon },
+ ];
+ 
++// Solo visibles para role "admin" (el backend igual rechaza estos endpoints
++// a cualquiera que no lo sea, esto es solo para no mostrar enlaces muertos)
++const ADMIN_NAV_LINKS = [
++  { href: "/admin/proyectos", label: "Proyectos (admin)", icon: Shield },
++  { href: "/admin/usuarios", label: "Usuarios (admin)", icon: UserIcon },
++];
++
+ // Navegacion lateral persistente de toda la app autenticada
+ export default function Sidebar() {
+   const { user, logout } = useAuth();
+   const router = useRouter();
+   const pathname = usePathname();
++  const navLinks = user?.role === "admin" ? [...NAV_LINKS, ...ADMIN_NAV_LINKS] : NAV_LINKS;
+ 
+   const handleLogout = async () => {
+     await logout();
+@@ -41,7 +49,7 @@ export default function Sidebar() {
+       </Link>
+ 
+       <nav className="flex-1 space-y-0.5 p-2">
+-        {NAV_LINKS.map(({ href, label, icon: Icon }) => {
++        {navLinks.map(({ href, label, icon: Icon }) => {
+           const active = pathname?.startsWith(href);
+           return (
+             <Link
+@@ -67,7 +75,14 @@ export default function Sidebar() {
+               {initials}
+             </div>
+             <div className="min-w-0 flex-1">
+-              <div className="truncate text-[12px] text-foreground">{user.name}</div>
++              <div className="flex items-center gap-1.5">
++                <span className="truncate text-[12px] text-foreground">{user.name}</span>
++                {user.role === "admin" && (
++                  <span className="flex-shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px font-mono text-[9px] uppercase tracking-wider text-amber-400">
++                    Admin
++                  </span>
++                )}
++              </div>
+               <div className="truncate font-mono text-[10px] text-muted-foreground">{user.role}</div>
+             </div>
+             <button
+diff --git a/src/services/adminUsers.ts b/src/services/adminUsers.ts
+new file mode 100644
+index 0000000..26960f7
+--- /dev/null
++++ b/src/services/adminUsers.ts
+@@ -0,0 +1,19 @@
++import api from "./api";
++import type { AdminUserUpdateRequest, User } from "@/types/api";
++
++// Gestión de usuarios (rol, activar/desactivar, reset de contraseña). Solo admin.
++export async function listUsers(): Promise<User[]> {
++  const response = await api.get<User[]>("/api/v1/users");
++  return response.data;
++}
++
++export async function updateUser(userId: string, data: AdminUserUpdateRequest): Promise<User> {
++  const response = await api.patch<User>(`/api/v1/users/${encodeURIComponent(userId)}`, data);
++  return response.data;
++}
++
++export async function resetUserPassword(userId: string, newPassword: string): Promise<void> {
++  await api.post(`/api/v1/users/${encodeURIComponent(userId)}/reset-password`, {
++    new_password: newPassword,
++  });
++}
+diff --git a/src/services/documents.ts b/src/services/documents.ts
+new file mode 100644
+index 0000000..ae0dc6c
+--- /dev/null
++++ b/src/services/documents.ts
+@@ -0,0 +1,16 @@
++import api from "./api";
++import type { DocumentIngestResult } from "@/types/api";
++
++// Sube y reenvía documentos al servicio RAG para indexarlos en un proyecto. Solo admin.
++export async function ingestDocuments(projectId: string, files: File[]): Promise<DocumentIngestResult> {
++  const formData = new FormData();
++  formData.append("project_id", projectId);
++  files.forEach((file) => formData.append("files", file));
++
++  // Sin Content-Type explícito: el navegador le agrega el boundary del
++  // multipart automáticamente. Ponerlo a mano aquí rompería el parseo en el backend.
++  const response = await api.post<DocumentIngestResult>("/api/v1/documents/ingest", formData, {
++    timeout: 120000,
++  });
++  return response.data;
++}
+diff --git a/src/services/projects.ts b/src/services/projects.ts
+new file mode 100644
+index 0000000..1a38ccf
+--- /dev/null
++++ b/src/services/projects.ts
+@@ -0,0 +1,45 @@
++import api from "./api";
++import type {
++  Ingestion,
++  Project,
++  ProjectCreateRequest,
++  ProjectIndexDeleteResult,
++  ProjectUpdateRequest,
++} from "@/types/api";
++
++// Catálogo de proyectos: cualquier usuario autenticado puede listarlos,
++// el resto de operaciones (crear, editar, borrar, ver ingestas) son solo admin.
++export async function listProjects(): Promise<Project[]> {
++  const response = await api.get<Project[]>("/api/v1/projects");
++  return response.data;
++}
++
++export async function createProject(data: ProjectCreateRequest): Promise<Project> {
++  const response = await api.post<Project>("/api/v1/projects", data);
++  return response.data;
++}
++
++export async function updateProject(projectId: string, data: ProjectUpdateRequest): Promise<Project> {
++  const response = await api.patch<Project>(`/api/v1/projects/${encodeURIComponent(projectId)}`, data);
++  return response.data;
++}
++
++export async function deleteProject(projectId: string): Promise<void> {
++  await api.delete(`/api/v1/projects/${encodeURIComponent(projectId)}`);
++}
++
++// Vacía el índice del RAG (fragmentos/embeddings) sin borrar el proyecto del catálogo.
++export async function deleteProjectIndex(projectId: string): Promise<ProjectIndexDeleteResult> {
++  const response = await api.delete<ProjectIndexDeleteResult>(
++    `/api/v1/projects/${encodeURIComponent(projectId)}/index`
++  );
++  return response.data;
++}
++
++// Historial de lo que se ha indexado en un proyecto (documentos, repos, commits).
++export async function getProjectIngestions(projectId: string): Promise<Ingestion[]> {
++  const response = await api.get<Ingestion[]>(
++    `/api/v1/projects/${encodeURIComponent(projectId)}/ingestions`
++  );
++  return response.data;
++}
+diff --git a/src/services/repositories.ts b/src/services/repositories.ts
+new file mode 100644
+index 0000000..15e843a
+--- /dev/null
++++ b/src/services/repositories.ts
+@@ -0,0 +1,62 @@
++import api from "./api";
++import type {
++  RepositoryBranchesResult,
++  RepositoryCommit,
++  RepositoryCommitsResult,
++  RepositoryIngestResult,
++} from "@/types/api";
++
++// Indexar un repositorio completo tarda más que una consulta normal; igual para
++// explorar commits (requiere clonar). Todo esto es solo-admin en el backend.
++const REPO_TIMEOUT_MS = 180000;
++
++// Paso 1 para indexar un repo: explorar sus ramas disponibles.
++export async function listBranches(repositoryUrl: string): Promise<string[]> {
++  const response = await api.post<RepositoryBranchesResult>("/api/v1/repositories/branches", {
++    repository_url: repositoryUrl,
++  });
++  const raw = response.data.branches ?? [];
++  return raw.map((b) => (typeof b === "string" ? b : b.name)).filter(Boolean);
++}
++
++// Paso 2: indexar las ramas elegidas.
++export async function ingestRepository(
++  projectId: string,
++  repositoryUrl: string,
++  branches: string[]
++): Promise<RepositoryIngestResult> {
++  const response = await api.post<RepositoryIngestResult>(
++    "/api/v1/repositories/ingest",
++    { project_id: projectId, repository_url: repositoryUrl, branches },
++    { timeout: REPO_TIMEOUT_MS }
++  );
++  return response.data;
++}
++
++// Paso 1 para indexar commits puntuales: listar los commits recientes de una rama.
++export async function listCommits(
++  repositoryUrl: string,
++  branch?: string,
++  limit = 20
++): Promise<RepositoryCommit[]> {
++  const response = await api.post<RepositoryCommitsResult>("/api/v1/repositories/commits", {
++    repository_url: repositoryUrl,
++    branch: branch?.trim() || undefined,
++    limit,
++  });
++  return response.data.commits ?? [];
++}
++
++// Paso 2: indexar hasta 10 commits puntuales (código + metadata + diff).
++export async function ingestCommits(
++  projectId: string,
++  repositoryUrl: string,
++  commits: string[]
++): Promise<RepositoryIngestResult> {
++  const response = await api.post<RepositoryIngestResult>(
++    "/api/v1/repositories/commits/ingest",
++    { project_id: projectId, repository_url: repositoryUrl, commits },
++    { timeout: REPO_TIMEOUT_MS }
++  );
++  return response.data;
++}
+diff --git a/src/types/api.ts b/src/types/api.ts
+index 4a05030..0e038e0 100644
+--- a/src/types/api.ts
++++ b/src/types/api.ts
+@@ -5,6 +5,8 @@ export interface User {
+   name: string;
+   email: string;
+   role: string;
++  active?: boolean;
++  created_at?: string | null;
+ }
+ 
+ export interface LoginRequest {
+@@ -73,4 +75,79 @@ export interface Conversation {
+   project_id: string;
+   created_at: string;
+   updated_at: string;
++}
++
++// --- Administración: proyectos, indexación y usuarios (solo admin) ---
++
++export interface Project {
++  project_id: string;
++  name: string;
++  description?: string | null;
++  created_by: string;
++  created_at: string;
++}
++
++export interface ProjectCreateRequest {
++  project_id?: string;
++  name: string;
++  description?: string;
++}
++
++export interface ProjectUpdateRequest {
++  name?: string;
++  description?: string;
++}
++
++export interface ProjectIndexDeleteResult {
++  project_id: string;
++  deleted_chunks: number;
++}
++
++export interface Ingestion {
++  type: "document" | "repository" | "commit";
++  source: string;
++  branches?: string[] | null;
++  commits?: string[] | null;
++  files_processed?: number | null;
++  chunks_created?: number | null;
++  created_by: string;
++  created_at: string;
++}
++
++// El backend reenvía la respuesta del servicio RAG tal cual (sin response_model
++// propio en /repositories/branches ni /repositories/ingest), así que se lee de
++// forma defensiva: se intentan los nombres esperados y se ignora lo demás.
++export interface RepositoryBranchesResult {
++  repository?: string;
++  branches?: (string | { name: string })[];
++  [key: string]: unknown;
++}
++
++export interface RepositoryIngestResult {
++  total_files?: number;
++  total_chunks?: number;
++  [key: string]: unknown;
++}
++
++export interface RepositoryCommit {
++  sha: string;
++  message: string;
++  authored_at: string;
++}
++
++export interface RepositoryCommitsResult {
++  repository?: string;
++  branch?: string | null;
++  commits?: RepositoryCommit[];
++  [key: string]: unknown;
++}
++
++export interface DocumentIngestResult {
++  total_chunks?: number;
++  [key: string]: unknown;
++}
++
++export interface AdminUserUpdateRequest {
++  role?: "user" | "admin";
++  active?: boolean;
+ }
+\ No newline at end of file
+-- 
+2.43.0
+
