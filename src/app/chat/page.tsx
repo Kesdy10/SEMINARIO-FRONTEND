@@ -18,7 +18,7 @@ const MOCK_PROJECTS: Project[] = [
   { project_id: "mock-project", name: "Proyecto de prueba (mocks)", created_by: "mock", created_at: new Date().toISOString() },
 ];
 const BRANCHES = ["main", "develop"];
-const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === "true";
+const USE_MOCKS = false; // Siempre usa backend real
 
 const SUGGESTIONS = [
   "¿Dónde se implementa el inicio de sesión?",
