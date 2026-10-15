@@ -12,3 +12,18 @@ export async function query(data: QueryRequest): Promise<QueryResponse> {
   });
   return response.data;
 }
+
+// Compara dos ramas de un repositorio y devuelve el análisis de cambios.
+// El RAG explica los cambios con evidencia de los archivos modificados.
+export async function compareQueries(data: {
+  project_id: string;
+  repository_url: string;
+  branch_a: string;
+  branch_b: string;
+  question: string;
+}): Promise<any> {
+  const response = await api.post<any>("/api/v1/compare", data, {
+    timeout: QUERY_TIMEOUT_MS,
+  });
+  return response.data;
+}

@@ -28,6 +28,22 @@ export async function deleteProject(projectId: string): Promise<void> {
   await api.delete(`/api/v1/projects/${encodeURIComponent(projectId)}`);
 }
 
+// Obtener detalles de un proyecto específico.
+export async function getProject(projectId: string): Promise<Project> {
+  const response = await api.get<Project>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}`
+  );
+  return response.data;
+}
+
+// Obtener fuentes indexadas en un proyecto (repos, documentos y sus fragmentos).
+export async function getProjectSources(projectId: string): Promise<any> {
+  const response = await api.get<any>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/sources`
+  );
+  return response.data;
+}
+
 // Vacía el índice del RAG (fragmentos/embeddings) sin borrar el proyecto del catálogo.
 export async function deleteProjectIndex(projectId: string): Promise<ProjectIndexDeleteResult> {
   const response = await api.delete<ProjectIndexDeleteResult>(

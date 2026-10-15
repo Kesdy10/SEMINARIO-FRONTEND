@@ -7,6 +7,7 @@ import Sidebar from "@/components/Sidebar";
 import MessageList from "@/components/chat/MessageList";
 import ChatInput from "@/components/chat/ChatInput";
 import { query } from "@/services/chat";
+import { getProject, getProjectSources } from "@/services/projects";
 import { getConversations, getConversationMessages } from "@/services/conversations";
 import { listProjects } from "@/services/projects";
 import { mockRespuestas } from "@/mocks/queryResponses";
@@ -17,8 +18,7 @@ import type { ChatMessage } from "@/types/chat";
 const MOCK_PROJECTS: Project[] = [
   { project_id: "mock-project", name: "Proyecto de prueba (mocks)", created_by: "mock", created_at: new Date().toISOString() },
 ];
-const BRANCHES = ["main", "develop"];
-const USE_MOCKS = false; // Siempre usa backend real
+const [availableBranches, setAvailableBranches] = useState<string[]>([]);
 
 const SUGGESTIONS = [
   "¿Dónde se implementa el inicio de sesión?",
@@ -75,7 +75,9 @@ export default function ChatPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [projectDetails, setProjectDetails] = useState<Project | null>(null);
 
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
   useEffect(() => {
     let active = true;
     getConversations()
@@ -103,10 +105,56 @@ export default function ChatPage() {
         if (active) setProjectsError("No se pudo cargar el catálogo de proyectos.");
       });
     return () => {
-      active = false;
-    };
+    }
   }, []);
 
+  // Cargar detalles del proyecto seleccionado
+  useEffect(() => {
+    if (!effectiveProjectId) return;
+    let active = true;
+    getProject(effectiveProjectId)
+      .then((data) => {
+        if (active) setProjectDetails(data);
+      })
+      .catch(() => {
+        if (active) setProjectDetails(null);
+      });
+    return () => {
+      active = false;
+      active = false;
+    };
+  }, [effectiveProjectId]);
+
+
+  // Cargar ramas del proyecto seleccionado
+  useEffect(() => {
+    if (!effectiveProjectId) {
+      setAvailableBranches([]);
+      setSelectedBranches([]);
+      return;
+    }
+    let active = true;
+    getProjectSources(effectiveProjectId)
+      .then((data) => {
+        if (active) {
+          const branches = data.repositories?.flatMap((repo: any) => 
+            repo.branches?.map((b: any) => b.name) || []
+          ) || [];
+          const uniqueBranches = Array.from(new Set(branches));
+          setAvailableBranches(uniqueBranches);
+          setSelectedBranches([]);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAvailableBranches([]);
+          setSelectedBranches([]);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [effectiveProjectId]);
   // Si no se ha elegido proyecto a mano, se usa el primero del catálogo —
   // derivado en cada render, sin un efecto que tenga que sincronizarlo.
   const effectiveProjectId = projectId || projects?.[0]?.project_id || "";
@@ -310,7 +358,7 @@ export default function ChatPage() {
           <fieldset className="flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
             <legend className="sr-only">Ramas a consultar</legend>
             <GitBranch className="h-3 w-3" />
-            {BRANCHES.map((branch) => {
+            {availableBranches.map((branch) => {
               const active = selectedBranches.includes(branch);
               return (
                 <button
