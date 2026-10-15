@@ -52,6 +52,13 @@ function groupByDate(convs: Conversation[]) {
   return Object.entries(groups).filter(([, v]) => v.length);
 }
 
+const SUGGESTIONS = [
+  "¿Cuáles son las funciones principales de este proyecto?",
+  "¿Qué endpoints tiene la API?",
+  "¿Cuál es la estructura del proyecto?",
+  "¿Dónde está implementada la autenticación?",
+];
+
 export default function ChatPage() {
   const [projectId, setProjectId] = useState("");
   // Con mocks, el catálogo es fijo y no depende del backend: se usa como estado
@@ -72,6 +79,9 @@ export default function ChatPage() {
   const [projectDetails, setProjectDetails] = useState<Project | null>(null);
 
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+
+  // Si no se ha elegido proyecto a mano, se usa el primero del catálogo
+  const effectiveProjectId = projectId || projects?.[0]?.project_id || "";
   useEffect(() => {
     let active = true;
     getConversations()
@@ -151,7 +161,6 @@ export default function ChatPage() {
   }, [effectiveProjectId]);
   // Si no se ha elegido proyecto a mano, se usa el primero del catálogo —
   // derivado en cada render, sin un efecto que tenga que sincronizarlo.
-  const effectiveProjectId = projectId || projects?.[0]?.project_id || "";
 
   function toggleBranch(branch: string) {
     setSelectedBranches((current) =>
