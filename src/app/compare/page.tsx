@@ -219,7 +219,7 @@ export default function ComparePage() {
                     Archivos modificados ({result.changes.length})
                   </p>
                   <div className="space-y-1">
-                    {result.changes.map((change: any, i: number) => (
+                    {result.changes.map((change: unknown, i: number) => (
                       <div
                         key={i}
                         className="rounded border border-border bg-secondary p-2 text-[11px] text-foreground"
@@ -240,7 +240,7 @@ export default function ComparePage() {
                     Fuentes ({result.sources.length})
                   </p>
                   <div className="space-y-1">
-                    {result.sources.map((source: any, i: number) => (
+                    {result.sources.map((source: unknown, i: number) => (
                       <div key={i} className="rounded border border-border bg-secondary p-2 text-[11px] text-muted-foreground">
                         <p className="truncate">{source.file || source.name}</p>
                         {source.score && (

@@ -24,7 +24,6 @@ interface StatusData {
     total_documents?: number;
     total_repositories?: number;
   };
-  [key: string]: any;
 }
 
 export default function StatusPage() {
@@ -40,7 +39,7 @@ export default function StatusPage() {
       const data = await getStatus();
       setStatus(data);
       setLastUpdated(new Date());
-    } catch (err) {
+    } catch (_err) {
       setError("No se pudo cargar el estado del sistema.");
       setStatus(null);
     } finally {

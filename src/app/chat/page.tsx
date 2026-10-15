@@ -76,14 +76,14 @@ export default function ChatPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [projectDetails, setProjectDetails] = useState<Project | null>(null);
+  const [_projectDetails, setProjectDetails] = useState<Project | null>(null);
 
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
 
   // Si no se ha elegido proyecto a mano, se usa el primero del catálogo
   const effectiveProjectId = projectId || projects?.[0]?.project_id || "";
   useEffect(() => {
-    let active = true;
+    const active = true;
     getConversations()
       .then((data) => {
         if (active) setConversations(data);
@@ -100,7 +100,7 @@ export default function ChatPage() {
   // estado ya arrancó con MOCK_PROJECTS (arriba), así que este efecto no hace nada.
   useEffect(() => {
     if (USE_MOCKS) return;
-    let active = true;
+    const active = true;
     listProjects()
       .then((data) => {
         if (active) setProjects(data);
@@ -115,7 +115,7 @@ export default function ChatPage() {
   // Cargar detalles del proyecto seleccionado
   useEffect(() => {
     if (!effectiveProjectId) return;
-    let active = true;
+    const active = true;
     getProject(effectiveProjectId)
       .then((data) => {
         if (active) setProjectDetails(data);
@@ -137,7 +137,7 @@ export default function ChatPage() {
       setSelectedBranches([]);
       return;
     }
-    let active = true;
+    const active = true;
     getProjectSources(effectiveProjectId)
       .then((data) => {
         if (active) {

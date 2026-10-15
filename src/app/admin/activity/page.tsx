@@ -34,7 +34,7 @@ export default function ActivityPage() {
       since.setDate(since.getDate() - sinceDays);
       const data = await getActivity(since);
       setActivities(data || []);
-    } catch (err) {
+    } catch (_err) {
       setError("No se pudo cargar la actividad.");
       setActivities([]);
     } finally {
@@ -43,6 +43,7 @@ export default function ActivityPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     loadActivity();
   }, [sinceDays]);
 
