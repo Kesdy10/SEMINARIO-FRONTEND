@@ -144,7 +144,7 @@ export default function ChatPage() {
       .then((data) => {
         if (active) {
           const branches: string[] = (data.repositories?.flatMap((repo: unknown) =>
-            repo.branches?.map((b: unknown) => (b as any).name) || []
+            repo.branches?.map((b: unknown) => (b as unknown).name) || []
           ) || []) as string[];
           const uniqueBranches = Array.from(new Set(branches));
           setAvailableBranches(uniqueBranches);
