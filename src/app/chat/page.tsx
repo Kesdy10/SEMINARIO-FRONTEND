@@ -84,7 +84,7 @@ export default function ChatPage() {
   // Si no se ha elegido proyecto a mano, se usa el primero del catálogo
   const effectiveProjectId = projectId || projects?.[0]?.project_id || "";
   useEffect(() => {
-    const active = true;
+    let active = true;
     getConversations()
       .then((data) => {
         if (active) setConversations(data);
@@ -101,7 +101,7 @@ export default function ChatPage() {
   // estado ya arrancó con MOCK_PROJECTS (arriba), así que este efecto no hace nada.
   useEffect(() => {
     if (USE_MOCKS) return;
-    const active = true;
+    let active = true;
     listProjects()
       .then((data) => {
         if (active) setProjects(data);
@@ -116,7 +116,7 @@ export default function ChatPage() {
   // Cargar detalles del proyecto seleccionado
   useEffect(() => {
     if (!effectiveProjectId) return;
-    const active = true;
+    let active = true;
     getProject(effectiveProjectId)
       .then((data) => {
         if (active) setProjectDetails(data);
@@ -139,7 +139,7 @@ export default function ChatPage() {
       setSelectedBranches([]);
       return;
     }
-    const active = true;
+    let active = true;
     getProjectSources(effectiveProjectId)
       .then((data) => {
         if (active) {
