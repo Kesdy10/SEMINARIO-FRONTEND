@@ -6,7 +6,7 @@ import { ArrowRight, Loader, Copy, Check } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { compareQueries } from "@/services/chat";
 import { listProjects } from "@/services/projects";
-import type { Project } from "@/types/api";
+import type { Project, CompareResponse, CompareChange, CompareSource } from "@/types/api";
 
 function errorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
@@ -28,7 +28,7 @@ export default function ComparePage() {
   const [question, setQuestion] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<unknown | null>(null);
+  const [result, setResult] = useState<CompareResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -219,7 +219,7 @@ export default function ComparePage() {
                     Archivos modificados ({result.changes.length})
                   </p>
                   <div className="space-y-1">
-                    {result.changes.map((change: unknown, i: number) => (
+                    {result.changes.map((change: CompareChange, i: number) => (
                       <div
                         key={i}
                         className="rounded border border-border bg-secondary p-2 text-[11px] text-foreground"
@@ -240,7 +240,7 @@ export default function ComparePage() {
                     Fuentes ({result.sources.length})
                   </p>
                   <div className="space-y-1">
-                    {result.sources.map((source: unknown, i: number) => (
+                    {result.sources.map((source: CompareSource, i: number) => (
                       <div key={i} className="rounded border border-border bg-secondary p-2 text-[11px] text-muted-foreground">
                         <p className="truncate">{source.file || source.name}</p>
                         {source.score && (

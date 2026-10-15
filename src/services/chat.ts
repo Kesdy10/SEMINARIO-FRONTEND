@@ -1,5 +1,5 @@
 import api from "./api";
-import type { QueryRequest, QueryResponse } from "@/types/api";
+import type { QueryRequest, QueryResponse, CompareResponse } from "@/types/api";
 
 // El RAG puede tardar en generar la respuesta, así que se da más tiempo que a otras peticiones
 const QUERY_TIMEOUT_MS = 60000;
@@ -21,8 +21,8 @@ export async function compareQueries(data: {
   branch_a: string;
   branch_b: string;
   question: string;
-}): Promise<unknown> {
-  const response = await api.post<unknown>("/api/v1/compare", data, {
+}): Promise<CompareResponse> {
+  const response = await api.post<CompareResponse>("/api/v1/compare", data, {
     timeout: QUERY_TIMEOUT_MS,
   });
   return response.data;

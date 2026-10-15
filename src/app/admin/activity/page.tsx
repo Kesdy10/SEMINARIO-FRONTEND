@@ -1,17 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ActivityEvent } from "@/types/api";
 import { Activity, Calendar, Filter, Loader, RefreshCw } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { getActivity } from "@/services/activity";
-
-interface ActivityEvent {
-  type: string;
-  project_id: string | null;
-  project_name: string | null;
-  source: string | null;
-  created_at: string;
-}
 
 const ACTIVITY_TYPES = [
   { value: "project_created", label: "Proyecto creado", color: "bg-blue-500/10 text-blue-400" },
@@ -45,6 +38,7 @@ export default function ActivityPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadActivity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sinceDays]);
 
   const filteredActivities = useMemo(

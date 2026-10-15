@@ -1,30 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { StatusData } from "@/types/api";
 import { Activity, AlertCircle, CheckCircle, Clock, Loader, RefreshCw, Zap } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { getStatus } from "@/services/status";
-
-interface StatusData {
-  rag_health?: {
-    status: string;
-    message?: string;
-    last_check?: string;
-  };
-  metrics?: {
-    total_queries?: number;
-    avg_response_time_ms?: number;
-    successful_queries?: number;
-    failed_queries?: number;
-  };
-  backend_stats?: {
-    total_users?: number;
-    total_projects?: number;
-    total_conversations?: number;
-    total_documents?: number;
-    total_repositories?: number;
-  };
-}
 
 export default function StatusPage() {
   const [status, setStatus] = useState<StatusData | null>(null);

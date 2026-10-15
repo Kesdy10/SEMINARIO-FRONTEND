@@ -151,3 +151,80 @@ export interface AdminUserUpdateRequest {
   role?: "user" | "admin";
   active?: boolean;
 }
+
+// Activity
+export interface ActivityEvent {
+  type: string;
+  project_id: string | null;
+  project_name: string | null;
+  source: string | null;
+  created_at: string;
+}
+
+// System Status
+export interface RAGHealth {
+  status: string;
+  message?: string;
+  last_check?: string;
+}
+
+export interface QueryMetrics {
+  total_queries?: number;
+  avg_response_time_ms?: number;
+  successful_queries?: number;
+  failed_queries?: number;
+}
+
+export interface BackendStats {
+  total_users?: number;
+  total_projects?: number;
+  total_conversations?: number;
+  total_documents?: number;
+  total_repositories?: number;
+}
+
+export interface StatusData {
+  rag_health?: RAGHealth;
+  metrics?: QueryMetrics;
+  backend_stats?: BackendStats;
+}
+
+// Project Sources
+export interface RepositoryBranch {
+  name: string;
+  [key: string]: unknown;
+}
+
+export interface RepositorySource {
+  name?: string;
+  branches: RepositoryBranch[];
+  [key: string]: unknown;
+}
+
+export interface ProjectSourcesData {
+  repositories?: RepositorySource[];
+  [key: string]: unknown;
+}
+
+// Compare Result
+export interface CompareChange {
+  file: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
+export interface CompareSource {
+  file?: string;
+  name?: string;
+  score?: number;
+  [key: string]: unknown;
+}
+
+export interface CompareResponse {
+  answer: string;
+  changes?: CompareChange[];
+  sources?: CompareSource[];
+  response_time_ms?: number;
+  model?: string;
+  [key: string]: unknown;
+}

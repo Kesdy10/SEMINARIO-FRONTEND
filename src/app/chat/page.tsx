@@ -11,7 +11,7 @@ import { getProject, getProjectSources } from "@/services/projects";
 import { getConversations, getConversationMessages } from "@/services/conversations";
 import { listProjects } from "@/services/projects";
 import { mockRespuestas } from "@/mocks/queryResponses";
-import type { Conversation, Project, QueryResponse } from "@/types/api";
+import type { Conversation, Project, QueryResponse, RepositorySource } from "@/types/api";
 import type { ChatMessage } from "@/types/chat";
 
 // Con mocks activos no hace falta backend real: se simula un único proyecto.
@@ -101,7 +101,7 @@ export default function ChatPage() {
   // estado ya arrancó con MOCK_PROJECTS (arriba), así que este efecto no hace nada.
   useEffect(() => {
     if (USE_MOCKS) return;
-    let active = true;
+    const active = true;
     listProjects()
       .then((data) => {
         if (active) setProjects(data);
@@ -143,8 +143,8 @@ export default function ChatPage() {
     getProjectSources(effectiveProjectId)
       .then((data) => {
         if (active) {
-          const branches: string[] = (data.repositories?.flatMap((repo: unknown) =>
-            repo.branches?.map((b: unknown) => (b as unknown).name) || []
+          const branches: string[] = (data.repositories?.flatMap((repo: RepositorySource) =>
+            repo.branches?.map((b) => b.name) || []
           ) || []) as string[];
           const uniqueBranches = Array.from(new Set(branches));
           setAvailableBranches(uniqueBranches);

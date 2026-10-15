@@ -5,6 +5,7 @@ import type {
   ProjectCreateRequest,
   ProjectIndexDeleteResult,
   ProjectUpdateRequest,
+  ProjectSourcesData,
 } from "@/types/api";
 
 // Catálogo de proyectos: cualquier usuario autenticado puede listarlos,
@@ -37,8 +38,8 @@ export async function getProject(projectId: string): Promise<Project> {
 }
 
 // Obtener fuentes indexadas en un proyecto (repos, documentos y sus fragmentos).
-export async function getProjectSources(projectId: string): Promise<unknown> {
-  const response = await api.get<unknown>(
+export async function getProjectSources(projectId: string): Promise<ProjectSourcesData> {
+  const response = await api.get<ProjectSourcesData>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/sources`
   );
   return response.data;
