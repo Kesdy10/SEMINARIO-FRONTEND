@@ -51,7 +51,9 @@ export default function UsuariosPage() {
   };
 
   useEffect(() => {
-    loadUsers();
+    (async () => {
+      await loadUsers();
+    })();
   }, []);
 
   const handleRoleChange = async (userId: string, newRole: "user" | "admin") => {

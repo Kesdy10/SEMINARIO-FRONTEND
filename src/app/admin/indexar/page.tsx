@@ -7,6 +7,13 @@ import { listProjects } from "@/services/projects";
 import { listCommits, ingestCommits } from "@/services/repositories";
 import type { Project } from "@/types/api";
 
+interface Commit {
+  hash: string;
+  id: string;
+  message?: string;
+  title?: string;
+}
+
 export default function IndexarPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -25,7 +32,7 @@ export default function IndexarPage() {
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   // Commits state
   const [showCommitsTab, setShowCommitsTab] = useState(false);
-  const [commits, setCommits] = useState<any[]>([]);
+  const [commits, setCommits] = useState<Commit[]>([]);
   const [commitsForBranch, setCommitsForBranch] = useState("");
   const [selectedCommits, setSelectedCommits] = useState<string[]>([]);
   const [isFetchingCommits, setIsFetchingCommits] = useState(false);
@@ -47,7 +54,9 @@ export default function IndexarPage() {
   };
 
   useEffect(() => {
-    loadProjects();
+    (async () => {
+      await loadProjects();
+    })();
   }, []);
 
   const handleFetchBranches = async () => {
@@ -461,7 +470,7 @@ export default function IndexarPage() {
                           Selecciona Commits
                         </label>
                         <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {commits.map((commit: any) => (
+                          {commits.map((commit: Commit) => (
                             <label key={commit.hash || commit.id} className="flex items-start gap-2 cursor-pointer p-2 hover:bg-secondary/50 rounded">
                               <input
                                 type="checkbox"
