@@ -6,6 +6,7 @@ import {
   Eraser,
   GitBranch,
   GitCommit,
+  Pencil,
   Plus,
   RefreshCw,
   Shield,
@@ -21,7 +22,9 @@ import {
   deleteProjectIndex,
   getProjectIngestions,
   listProjects,
+  updateProject,
 } from "@/services/projects";
+import { formatDate, formatDateTime } from "@/lib/dates";
 import type { Ingestion, Project, RepositoryCommit } from "@/types/api";
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -56,6 +59,15 @@ export default function AdminProyectosPage() {
   const [deletingProject, setDeletingProject] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // Edición de nombre/descripción. Se guarda el id del proyecto que se está
+  // editando (no un booleano) para que al cambiar de proyecto el formulario
+  // no quede abierto con datos de otro.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   // Cambia cada vez que algo se indexa, para forzar a <ProjectIngestions> a
   // recargar (se le pasa como parte de su `key`, junto al project_id).
   const [reloadToken, setReloadToken] = useState(0);
@@ -85,6 +97,42 @@ export default function AdminProyectosPage() {
     () => (projects ?? []).find((p) => p.project_id === selectedId) ?? null,
     [projects, selectedId]
   );
+  const isEditing = selectedProject !== null && editingId === selectedProject.project_id;
+
+  function handleStartEdit() {
+    if (!selectedProject) return;
+    setEditName(selectedProject.name);
+    setEditDescription(selectedProject.description ?? "");
+    setEditError(null);
+    setEditingId(selectedProject.project_id);
+  }
+
+  async function handleSaveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedProject) return;
+    const name = editName.trim();
+    if (name.length < 2) {
+      setEditError("El nombre debe tener al menos 2 caracteres.");
+      return;
+    }
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      // La descripción vacía se envía como "" para poder borrarla.
+      const updated = await updateProject(selectedProject.project_id, {
+        name,
+        description: editDescription.trim(),
+      });
+      setProjects((current) =>
+        (current ?? []).map((p) => (p.project_id === updated.project_id ? updated : p))
+      );
+      setEditingId(null);
+    } catch (err) {
+      setEditError(errorMessage(err, "No se pudo guardar el proyecto."));
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault();
@@ -273,18 +321,74 @@ export default function AdminProyectosPage() {
         {selectedProject && (
           <div className="max-w-3xl space-y-5">
             <div className="flex items-start justify-between gap-4 rounded border border-border bg-card p-5">
-              <div className="min-w-0 space-y-1">
-                <h2 className="truncate text-lg font-semibold text-foreground">{selectedProject.name}</h2>
-                <p className="font-mono text-[11px] text-primary">{selectedProject.project_id}</p>
-                {selectedProject.description && (
-                  <p className="text-[13px] text-muted-foreground">{selectedProject.description}</p>
+              <div className="min-w-0 flex-1 space-y-1">
+                {isEditing ? (
+                  <form onSubmit={handleSaveEdit} className="space-y-2">
+                    <div className="space-y-1">
+                      <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Nombre
+                      </label>
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        maxLength={120}
+                        className="w-full rounded border border-border bg-secondary px-2 py-1.5 text-[13px] text-foreground focus:border-primary/60 focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Descripción
+                      </label>
+                      <textarea
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        maxLength={500}
+                        rows={3}
+                        className="w-full resize-none rounded border border-border bg-secondary px-2 py-1.5 text-[13px] text-foreground focus:border-primary/60 focus:outline-none"
+                      />
+                    </div>
+                    {editError && <p className="font-mono text-[11px] text-red-400">{editError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={savingEdit}
+                        className="rounded bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {savingEdit ? "Guardando…" : "Guardar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        disabled={savingEdit}
+                        className="rounded border border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <h2 className="truncate text-lg font-semibold text-foreground">{selectedProject.name}</h2>
+                    {selectedProject.description && (
+                      <p className="text-[13px] text-muted-foreground">{selectedProject.description}</p>
+                    )}
+                  </>
                 )}
+                <p className="font-mono text-[11px] text-primary">{selectedProject.project_id}</p>
                 <p className="font-mono text-[10px] text-muted-foreground">
                   Creado por {selectedProject.created_by} ·{" "}
-                  {new Date(selectedProject.created_at).toLocaleString("es-GT")}
+                  {formatDateTime(selectedProject.created_at)}
                 </p>
               </div>
               <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleStartEdit}
+                  disabled={isEditing}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded border border-border bg-secondary px-2.5 py-1.5 font-mono text-[11px] text-foreground transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Pencil className="h-3 w-3" /> Editar
+                </button>
                 <button
                   type="button"
                   onClick={handleClearIndex}
@@ -636,7 +740,7 @@ function ProjectIngestions({ projectId }: { projectId: string }) {
               <span className="min-w-0 flex-1 truncate text-foreground">{ing.source}</span>
               <span>{ing.files_processed ?? "—"} archivos</span>
               <span>{ing.chunks_created ?? "—"} fragmentos</span>
-              <span>{new Date(ing.created_at).toLocaleDateString("es-GT")}</span>
+              <span>{formatDate(ing.created_at)}</span>
             </div>
           ))}
         </div>

@@ -5,18 +5,20 @@ import type { ActivityEvent } from "@/types/api";
 import { Activity, Calendar, Filter, Loader, RefreshCw } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { getActivity } from "@/services/activity";
+import { formatDateTime, parseBackendDate } from "@/lib/dates";
 
 const ACTIVITY_TYPES = [
   { value: "project_created", label: "Proyecto creado", color: "bg-blue-500/10 text-blue-400" },
   { value: "document", label: "Documento indexado", color: "bg-green-500/10 text-green-400" },
   { value: "repository", label: "Repositorio indexado", color: "bg-purple-500/10 text-purple-400" },
+  { value: "commit", label: "Commits indexados", color: "bg-amber-500/10 text-amber-400" },
 ];
 
 export default function ActivityPage() {
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTypes, setSelectedTypes] = useState<string[]>(["project_created", "document", "repository"]);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>(ACTIVITY_TYPES.map((t) => t.value));
   const [sinceDays, setSinceDays] = useState(7);
 
   const loadActivity = async () => {
@@ -42,7 +44,14 @@ export default function ActivityPage() {
   }, [sinceDays]);
 
   const filteredActivities = useMemo(
-    () => activities.filter((a) => selectedTypes.includes(a.type)),
+    // El backend las entrega de la más antigua a la más reciente; se muestran al revés.
+    () =>
+      activities
+        .filter((a) => selectedTypes.includes(a.type))
+        .sort(
+          (a, b) =>
+            parseBackendDate(b.created_at).getTime() - parseBackendDate(a.created_at).getTime()
+        ),
     [activities, selectedTypes]
   );
 
@@ -158,7 +167,7 @@ export default function ActivityPage() {
                     </p>
                   )}
                   <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-                    {new Date(activity.created_at).toLocaleString("es-GT", {
+                    {formatDateTime(activity.created_at, {
                       year: "numeric",
                       month: "short",
                       day: "numeric",

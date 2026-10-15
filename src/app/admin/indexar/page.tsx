@@ -4,21 +4,14 @@ import { useEffect, useState } from "react";
 import { Upload, Loader, RefreshCw, AlertCircle, CheckCircle } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { listProjects } from "@/services/projects";
-import type { Project } from "@/types/api";
-
-interface Commit {
-  hash: string;
-  id: string;
-  message?: string;
-  title?: string;
-}
-
-interface Commit {
-  hash: string;
-  id: string;
-  message?: string;
-  title?: string;
-}
+import {
+  listBranches,
+  ingestRepository,
+  listCommits,
+  ingestCommits,
+} from "@/services/repositories";
+import { ingestDocuments } from "@/services/documents";
+import type { Project, RepositoryCommit } from "@/types/api";
 
 export default function IndexarPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -38,7 +31,7 @@ export default function IndexarPage() {
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   // Commits state
   const [showCommitsTab, setShowCommitsTab] = useState(false);
-  const [commits, setCommits] = useState<Commit[]>([]);
+  const [commits, setCommits] = useState<RepositoryCommit[]>([]);
   const [commitsForBranch, setCommitsForBranch] = useState("");
   const [selectedCommits, setSelectedCommits] = useState<string[]>([]);
   const [isFetchingCommits, setIsFetchingCommits] = useState(false);
@@ -77,20 +70,7 @@ export default function IndexarPage() {
     setSelectedBranches([]);
 
     try {
-      const response = await fetch("/api/v1/repositories/branches", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-        },
-        body: JSON.stringify({ repository_url: repositoryUrl }),
-      });
-
-      if (!response.ok) throw new Error("Failed to fetch branches");
-      const data = await response.json();
-      const branchNames = (data.branches || []).map((b: unknown) =>
-        typeof b === "string" ? b : (b as { name: string }).name
-      );
+      const branchNames = await listBranches(repositoryUrl);
       setBranches(branchNames);
     } catch (_err) {
       setError("No se pudieron cargar las ramas del repositorio.");
@@ -118,20 +98,7 @@ export default function IndexarPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch("/api/v1/repositories/ingest", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-        },
-        body: JSON.stringify({
-          project_id: selectedProjectId,
-          repository_url: repositoryUrl,
-          branches: selectedBranches,
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to ingest repository");
+      await ingestRepository(selectedProjectId, repositoryUrl, selectedBranches);
       setSuccess("Repositorio indexado exitosamente.");
       setRepositoryUrl("");
       setBranches([]);
@@ -160,21 +127,8 @@ export default function IndexarPage() {
     setSelectedCommits([]);
 
     try {
-      const response = await fetch("/api/v1/repositories/commits", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-        },
-        body: JSON.stringify({
-          repository_url: repositoryUrl,
-          branch: commitsForBranch,
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to fetch commits");
-      const data = await response.json();
-      setCommits(data.commits || []);
+      const data = await listCommits(repositoryUrl, commitsForBranch);
+      setCommits(data);
     } catch (_err) {
       setError("No se pudieron cargar los commits.");
     } finally {
@@ -205,21 +159,7 @@ export default function IndexarPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch("/api/v1/repositories/commits/ingest", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-        },
-        body: JSON.stringify({
-          project_id: selectedProjectId,
-          repository_url: repositoryUrl,
-          branch: commitsForBranch,
-          commit_hashes: selectedCommits,
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to ingest commits");
+      await ingestCommits(selectedProjectId, repositoryUrl, selectedCommits);
       setSuccess("Commits indexados exitosamente.");
       setRepositoryUrl("");
       setBranches([]);
@@ -250,19 +190,7 @@ export default function IndexarPage() {
     setSuccess(null);
 
     try {
-      const formData = new FormData();
-      formData.append("project_id", selectedProjectId);
-      formData.append("file", documentFile);
-
-      const response = await fetch("/api/v1/documents/ingest", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error("Failed to ingest document");
+      await ingestDocuments(selectedProjectId, [documentFile]);
       setSuccess("Documento indexado exitosamente.");
       setDocumentFile(null);
     } catch (_err) {
@@ -476,24 +404,23 @@ export default function IndexarPage() {
                           Selecciona Commits
                         </label>
                         <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {commits.map((commit: Commit) => (
-                            <label key={commit.hash || commit.id} className="flex items-start gap-2 cursor-pointer p-2 hover:bg-secondary/50 rounded">
+                          {commits.map((commit: RepositoryCommit) => (
+                            <label key={commit.sha} className="flex items-start gap-2 cursor-pointer p-2 hover:bg-secondary/50 rounded">
                               <input
                                 type="checkbox"
-                                checked={selectedCommits.includes(commit.hash || commit.id)}
+                                checked={selectedCommits.includes(commit.sha)}
                                 onChange={(e) => {
-                                  const hash = commit.hash || commit.id;
                                   if (e.target.checked) {
-                                    setSelectedCommits([...selectedCommits, hash]);
+                                    setSelectedCommits([...selectedCommits, commit.sha]);
                                   } else {
-                                    setSelectedCommits(selectedCommits.filter((c) => c !== hash));
+                                    setSelectedCommits(selectedCommits.filter((c) => c !== commit.sha));
                                   }
                                 }}
                                 className="h-3 w-3 mt-1"
                               />
                               <div className="flex-1">
-                                <p className="text-[11px] font-mono text-foreground">{(commit.hash || commit.id).substring(0, 7)}</p>
-                                <p className="text-[11px] text-muted-foreground">{commit.message || commit.title || "Sin mensaje"}</p>
+                                <p className="text-[11px] font-mono text-foreground">{commit.sha.substring(0, 7)}</p>
+                                <p className="text-[11px] text-muted-foreground">{commit.message || "Sin mensaje"}</p>
                               </div>
                             </label>
                           ))}

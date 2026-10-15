@@ -161,32 +161,40 @@ export interface ActivityEvent {
   created_at: string;
 }
 
-// System Status
+// System Status (GET /api/v1/status)
 export interface RAGHealth {
-  status: string;
-  message?: string;
-  last_check?: string;
+  status?: string | null;
+  database?: string | null;
+  vector_store?: string | null;
+  embedding_service?: string | null;
+  embedding_provider?: string | null;
+  embedding_model?: string | null;
+  llm_service?: string | null;
+  llm_provider?: string | null;
+  llm_model?: string | null;
 }
 
 export interface QueryMetrics {
-  total_queries?: number;
-  avg_response_time_ms?: number;
-  successful_queries?: number;
-  failed_queries?: number;
+  total_queries?: number | null;
+  successful_queries?: number | null;
+  failed_queries?: number | null;
+  average_response_time_ms?: number | null;
 }
 
 export interface BackendStats {
-  total_users?: number;
-  total_projects?: number;
-  total_conversations?: number;
-  total_documents?: number;
-  total_repositories?: number;
+  total_users: number;
+  total_projects: number;
+  total_conversations: number;
+  total_queries: number;
+  average_response_time_ms?: number | null;
 }
 
 export interface StatusData {
-  rag_health?: RAGHealth;
-  metrics?: QueryMetrics;
-  backend_stats?: BackendStats;
+  rag?: RAGHealth | null;
+  rag_error?: string | null;
+  rag_metrics?: QueryMetrics | null;
+  rag_metrics_error?: string | null;
+  backend: BackendStats;
 }
 
 // Project Sources
