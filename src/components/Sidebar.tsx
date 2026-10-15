@@ -16,6 +16,8 @@ const NAV_LINKS = [
 const ADMIN_NAV_LINKS = [
   { href: "/admin/proyectos", label: "Proyectos (admin)", icon: Shield },
   { href: "/admin/usuarios", label: "Usuarios (admin)", icon: UserIcon },
+  { href: "/admin/activity", label: "Actividad (admin)", icon: Clock },
+  { href: "/admin/status", label: "Estado (admin)", icon: Layers },
 ];
 
 // Navegacion lateral persistente de toda la app autenticada
