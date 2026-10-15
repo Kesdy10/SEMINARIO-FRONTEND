@@ -18,14 +18,8 @@ import type { ChatMessage } from "@/types/chat";
 const MOCK_PROJECTS: Project[] = [
   { project_id: "mock-project", name: "Proyecto de prueba (mocks)", created_by: "mock", created_at: new Date().toISOString() },
 ];
-const [availableBranches, setAvailableBranches] = useState<string[]>([]);
 
-const SUGGESTIONS = [
-  "¿Dónde se implementa el inicio de sesión?",
-  "¿Qué tablas contiene el proyecto?",
-  "¿Qué diferencias hay entre main y develop?",
-  "¿Qué función registra un nuevo usuario?",
-];
+const USE_MOCKS = false;
 
 function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
