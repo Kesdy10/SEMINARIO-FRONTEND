@@ -37,8 +37,8 @@ export async function getProject(projectId: string): Promise<Project> {
 }
 
 // Obtener fuentes indexadas en un proyecto (repos, documentos y sus fragmentos).
-export async function getProjectSources(projectId: string): Promise<any> {
-  const response = await api.get<any>(
+export async function getProjectSources(projectId: string): Promise<unknown> {
+  const response = await api.get<unknown>(
     `/api/v1/projects/${encodeURIComponent(projectId)}/sources`
   );
   return response.data;

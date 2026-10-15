@@ -75,8 +75,8 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [search, setSearch] = useState("");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_projectDetails, setProjectDetails] = useState<Project | null>(null);
 
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
@@ -144,7 +144,7 @@ export default function ChatPage() {
       .then((data) => {
         if (active) {
           const branches: string[] = (data.repositories?.flatMap((repo: unknown) =>
-            repo.branches?.map((b: any) => b.name) || []
+            repo.branches?.map((b: unknown) => (b as any).name) || []
           ) || []) as string[];
           const uniqueBranches = Array.from(new Set(branches));
           setAvailableBranches(uniqueBranches);

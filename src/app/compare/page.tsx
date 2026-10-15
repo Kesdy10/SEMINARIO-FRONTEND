@@ -28,7 +28,7 @@ export default function ComparePage() {
   const [question, setQuestion] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any | null>(null);
+  const [result, setResult] = useState<unknown | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 

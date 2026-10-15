@@ -21,8 +21,8 @@ export async function compareQueries(data: {
   branch_a: string;
   branch_b: string;
   question: string;
-}): Promise<any> {
-  const response = await api.post<any>("/api/v1/compare", data, {
+}): Promise<unknown> {
+  const response = await api.post<unknown>("/api/v1/compare", data, {
     timeout: QUERY_TIMEOUT_MS,
   });
   return response.data;
