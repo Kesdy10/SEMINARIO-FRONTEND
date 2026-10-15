@@ -141,9 +141,9 @@ export default function ChatPage() {
     getProjectSources(effectiveProjectId)
       .then((data) => {
         if (active) {
-          const branches = data.repositories?.flatMap((repo: any) => 
+          const branches: string[] = (data.repositories?.flatMap((repo: any) =>
             repo.branches?.map((b: any) => b.name) || []
-          ) || [];
+          ) || []) as string[];
           const uniqueBranches = Array.from(new Set(branches));
           setAvailableBranches(uniqueBranches);
           setSelectedBranches([]);
