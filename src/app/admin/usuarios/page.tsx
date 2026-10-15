@@ -167,9 +167,9 @@ export default function UsuariosPage() {
             <button
               onClick={loadUsers}
               disabled={isLoading}
-              className="rounded border border-border bg-secondary px-2.5 py-1.5 text-[12px] text-foreground hover:bg-secondary/80 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded border border-border bg-secondary px-2.5 py-1.5 text-[12px] text-foreground hover:bg-secondary/80 disabled:opacity-50"
             >
-              <RefreshCw className={`inline h-3 w-3 ${isLoading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`} /> Actualizar
             </button>
           </div>
         </header>
@@ -319,10 +319,10 @@ export default function UsuariosPage() {
                         <button
                           onClick={() => handleResetPassword(user.id)}
                           disabled={resettingId === user.id}
-                          className="inline text-yellow-400 hover:text-yellow-300 disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 whitespace-nowrap rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 font-mono text-[11px] text-amber-400 transition-colors hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                           title="Resetear contraseña"
                         >
-                          <Lock className="h-3.5 w-3.5" />
+                          <Lock className="h-3 w-3" /> Resetear contraseña
                         </button>
                       </td>
                     </tr>

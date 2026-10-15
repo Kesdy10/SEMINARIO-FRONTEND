@@ -210,9 +210,9 @@ export default function IndexarPage() {
           <button
             onClick={loadProjects}
             disabled={isLoading}
-            className="rounded border border-border bg-secondary px-2.5 py-1.5 text-[12px] text-foreground hover:bg-secondary/80 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded border border-border bg-secondary px-2.5 py-1.5 text-[12px] text-foreground hover:bg-secondary/80 disabled:opacity-50"
           >
-            <RefreshCw className={`inline h-3 w-3 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`} /> Actualizar
           </button>
         </header>
 

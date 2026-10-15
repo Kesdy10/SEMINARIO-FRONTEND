@@ -227,14 +227,6 @@ export default function AdminProyectosPage() {
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={loadProjects}
-              title="Recargar catálogo"
-              className="flex-shrink-0 rounded border border-border p-2 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
           </div>
           {projectsError && <p className="font-mono text-[11px] text-red-400">{projectsError}</p>}
           {projects === null && !projectsError && (
@@ -242,13 +234,22 @@ export default function AdminProyectosPage() {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowCreate((v) => !v)}
-          className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-primary transition-colors hover:text-primary/80"
-        >
-          <Plus className="h-3 w-3" /> Crear proyecto
-        </button>
+        <div className="mt-2 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setShowCreate((v) => !v)}
+            className="flex items-center gap-1.5 font-mono text-[11px] text-primary transition-colors hover:text-primary/80"
+          >
+            <Plus className="h-3 w-3" /> Crear proyecto
+          </button>
+          <button
+            type="button"
+            onClick={loadProjects}
+            className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <RefreshCw className="h-3 w-3" /> Actualizar lista
+          </button>
+        </div>
 
         {showCreate && (
           <form onSubmit={handleCreateProject} className="mt-2 space-y-2 rounded border border-border bg-card p-3">
