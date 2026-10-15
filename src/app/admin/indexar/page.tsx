@@ -4,8 +4,14 @@ import { useEffect, useState } from "react";
 import { Upload, Loader, RefreshCw, AlertCircle, CheckCircle } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { listProjects } from "@/services/projects";
-import { listCommits, ingestCommits } from "@/services/repositories";
 import type { Project } from "@/types/api";
+
+interface Commit {
+  hash: string;
+  id: string;
+  message?: string;
+  title?: string;
+}
 
 interface Commit {
   hash: string;
