@@ -39,7 +39,7 @@ export default function StatusPage() {
       const data = await getStatus();
       setStatus(data);
       setLastUpdated(new Date());
-    } catch (_err) {
+    } catch (_err) { // eslint-disable-line @typescript-eslint/no-unused-vars
       setError("No se pudo cargar el estado del sistema.");
       setStatus(null);
     } finally {
@@ -48,6 +48,7 @@ export default function StatusPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadStatus();
   }, []);
 

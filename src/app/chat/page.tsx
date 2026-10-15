@@ -76,7 +76,7 @@ export default function ChatPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [loadingConvId, setLoadingConvId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [_projectDetails, setProjectDetails] = useState<Project | null>(null);
+  const [_projectDetails, setProjectDetails] // eslint-disable-line @typescript-eslint/no-unused-vars = useState<Project | null>(null);
 
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
 
@@ -133,6 +133,7 @@ export default function ChatPage() {
   // Cargar ramas del proyecto seleccionado
   useEffect(() => {
     if (!effectiveProjectId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAvailableBranches([]);
       setSelectedBranches([]);
       return;

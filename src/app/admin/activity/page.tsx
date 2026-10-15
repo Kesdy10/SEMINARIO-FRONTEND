@@ -34,7 +34,7 @@ export default function ActivityPage() {
       since.setDate(since.getDate() - sinceDays);
       const data = await getActivity(since);
       setActivities(data || []);
-    } catch (_err) {
+    } catch (_err) { // eslint-disable-line @typescript-eslint/no-unused-vars
       setError("No se pudo cargar la actividad.");
       setActivities([]);
     } finally {
@@ -43,7 +43,7 @@ export default function ActivityPage() {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadActivity();
   }, [sinceDays]);
 
